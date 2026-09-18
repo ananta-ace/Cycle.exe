@@ -1,0 +1,1200 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Cycle.exe · Mission Reports</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: 'Space Grotesk', sans-serif;
+      background: #f9f7f3;
+      color: #1e1e1e;
+      line-height: 1.5;
+      padding: 2rem 1.5rem;
+    }
+
+    .page {
+      max-width: 1280px;
+      margin: 0 auto;
+    }
+
+    /* ---------- HEADER ---------- */
+    .hero {
+      margin-bottom: 3rem;
+      text-align: center;
+    }
+
+    .hero h1 {
+      font-size: 3.2rem;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.75rem;
+      background: #1e1e1e;
+      color: #f9f7f3;
+      padding: 0.6rem 2rem 0.7rem 2rem;
+      border-radius: 60px;
+      line-height: 1.2;
+      box-shadow: 0 8px 0 #b1b1b1;
+      margin-bottom: 1.25rem;
+    }
+
+    .hero h1 i {
+      color: #f9c74f;
+      font-size: 2.2rem;
+    }
+
+    .hero h1 span {
+      color: #f9c74f;
+      font-weight: 700;
+      letter-spacing: 0.5px;
+    }
+
+    .hero p {
+      font-size: 1.3rem;
+      font-weight: 400;
+      color: #2f2f2f;
+      max-width: 700px;
+      margin: 0 auto;
+      border-bottom: 3px dashed #c0c0c0;
+      padding-bottom: 1.8rem;
+    }
+
+    /* ---------- GROUP GRID (6 member cards) ---------- */
+    .group-grid {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      gap: 1.8rem;
+      margin: 2.5rem 0 3rem;
+    }
+
+    .card {
+      background: white;
+      border-radius: 32px;
+      padding: 2rem 1.25rem 1.5rem;
+      box-shadow: 0 10px 20px rgba(0, 0, 0, 0.05), 0 6px 0 #e0ddd6;
+      border: 2px solid #1e1e1e;
+      transition: all 0.15s ease;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      text-align: center;
+      flex: 0 1 200px;
+      min-width: 170px;
+      position: relative;
+    }
+
+    .card:hover {
+      transform: translateY(-6px);
+      box-shadow: 0 18px 28px rgba(0, 0, 0, 0.08), 0 8px 0 #c0b9ae;
+    }
+
+    .card.inactive {
+      opacity: 0.72;
+      background: #f3f1ed;
+      box-shadow: 0 6px 12px rgba(0, 0, 0, 0.03), 0 4px 0 #d6d2ca;
+      border-style: dashed;
+    }
+
+    .card.inactive .avatar {
+      filter: grayscale(0.6);
+      border-style: dashed;
+    }
+
+    .status-badge {
+      position: absolute;
+      top: 14px;
+      right: 14px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 0.7rem;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      padding: 0.3rem 0.8rem;
+      border-radius: 30px;
+      border: 1.5px solid #1e1e1e;
+      z-index: 2;
+    }
+
+    .status-badge.active {
+      background: #c6e2c6;
+      color: #1e1e1e;
+      border-color: #1e1e1e;
+    }
+
+    .status-badge.inactive {
+      background: #e8e2d9;
+      color: #8a8a8a;
+      border-color: #b9b1a6;
+    }
+
+    .status-badge i {
+      font-size: 0.6rem;
+    }
+
+    .status-badge.active i {
+      color: #2e7d32;
+    }
+
+    .status-badge.inactive i {
+      color: #9e9e9e;
+    }
+
+    .avatar {
+      width: 110px;
+      height: 110px;
+      border-radius: 50%;
+      background: #d9e2e8;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 2.8rem;
+      font-weight: 600;
+      color: #1e1e1e;
+      border: 4px solid #1e1e1e;
+      margin-bottom: 1rem;
+      margin-top: 0.6rem;
+      overflow: hidden;
+      position: relative;
+      flex-shrink: 0;
+    }
+
+    .avatar img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+      border-radius: 50%;
+    }
+
+    .avatar .fallback {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 2.8rem;
+      font-weight: 700;
+      color: #1e1e1e;
+      background: inherit;
+      border-radius: 50%;
+    }
+
+    .member-name {
+      font-size: 1.4rem;
+      font-weight: 700;
+      letter-spacing: -0.01em;
+      margin-bottom: 0.2rem;
+      line-height: 1.2;
+    }
+
+    .member-role {
+      font-size: 0.85rem;
+      font-weight: 500;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      background: #f0ede8;
+      padding: 0.25rem 0.9rem;
+      border-radius: 30px;
+      display: inline-block;
+      margin-bottom: 0.9rem;
+      border: 1px solid #b9b1a6;
+    }
+
+    /* ---------- STATS BAR ---------- */
+    .stats {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      gap: 2.5rem 4rem;
+      background: #ffffffd5;
+      backdrop-filter: blur(4px);
+      border: 2px solid #1e1e1e;
+      border-radius: 80px;
+      padding: 1.5rem 2.5rem;
+      margin: 2rem 0 3rem;
+      box-shadow: 0 6px 0 #d6d2ca;
+    }
+
+    .stat-item {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .stat-icon {
+      font-size: 2rem;
+      color: #1e1e1e;
+    }
+
+    .stat-content {
+      display: flex;
+      flex-direction: column;
+    }
+
+    .stat-number {
+      font-size: 1.8rem;
+      font-weight: 700;
+      line-height: 1;
+      color: #1e1e1e;
+    }
+
+    .stat-label {
+      font-size: 0.85rem;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      font-weight: 500;
+      color: #4f4f4f;
+    }
+
+    /* ---------- SECTION TITLE ---------- */
+    .section-title {
+      text-align: center;
+      margin: 4rem 0 2rem;
+      font-size: 2rem;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 14px;
+      color: #1e1e1e;
+    }
+
+    .section-title i {
+      color: #b45309;
+      font-size: 1.8rem;
+    }
+
+    .section-title span {
+      background: #1e1e1e;
+      color: #f9f7f3;
+      padding: 0.3rem 1.4rem;
+      border-radius: 50px;
+      font-size: 1.1rem;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    /* ---------- MISSION REPORT ---------- */
+    .mission-report {
+      background: #ffffff;
+      border: 2px solid #1e1e1e;
+      border-radius: 40px;
+      padding: 2.5rem 2rem;
+      margin: 1.5rem 0 2.5rem;
+      box-shadow: 0 10px 0 #d6d2ca;
+      position: relative;
+    }
+
+    .report-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      background: #1e1e1e;
+      color: #f9f7f3;
+      padding: 0.5rem 1.5rem;
+      border-radius: 50px;
+      font-weight: 600;
+      font-size: 0.95rem;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      margin-bottom: 1.8rem;
+      border: 2px solid #1e1e1e;
+    }
+
+    .report-badge i {
+      color: #f9c74f;
+    }
+
+    .mission-report h2 {
+      font-size: 2.4rem;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      margin-bottom: 0.4rem;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+
+    .mission-report h2 i {
+      color: #b45309;
+      font-size: 2rem;
+    }
+
+    .report-meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 1.2rem 2.5rem;
+      font-size: 1rem;
+      font-weight: 500;
+      color: #3b3b3b;
+      background: #f6f3ee;
+      padding: 1rem 1.5rem;
+      border-radius: 60px;
+      margin: 1.2rem 0 1.8rem;
+      border: 1px dashed #b9b1a6;
+      align-items: center;
+    }
+
+    .report-meta span {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .report-meta i {
+      color: #b45309;
+      font-size: 1.1rem;
+    }
+
+    .route-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 1.5rem 0 1.8rem;
+      border-radius: 24px;
+      overflow: hidden;
+      border: 2px solid #1e1e1e;
+    }
+
+    .route-table thead {
+      background: #1e1e1e;
+      color: #f9f7f3;
+    }
+
+    .route-table th {
+      padding: 0.9rem 1.2rem;
+      text-align: left;
+      font-weight: 600;
+      font-size: 0.9rem;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+    }
+
+    .route-table td {
+      padding: 1rem 1.2rem;
+      font-weight: 500;
+      border-bottom: 1px solid #e0ddd6;
+      font-size: 1rem;
+    }
+
+    .route-table tbody tr:last-child td {
+      border-bottom: none;
+    }
+
+    .route-table tbody tr:nth-child(even) {
+      background: #f9f7f3;
+    }
+
+    .route-table tbody tr:hover {
+      background: #f0ede8;
+    }
+
+    .seg-icon {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 30px;
+      height: 30px;
+      border-radius: 50%;
+      background: #e8e2d9;
+      color: #1e1e1e;
+      font-size: 0.9rem;
+      margin-right: 10px;
+    }
+
+    .km-badge {
+      display: inline-block;
+      background: #1e1e1e;
+      color: #f9c74f;
+      font-weight: 700;
+      padding: 0.2rem 0.9rem;
+      border-radius: 30px;
+      font-size: 0.9rem;
+    }
+
+    .route-table tfoot td {
+      background: #1e1e1e;
+      color: #f9f7f3;
+      font-weight: 700;
+      font-size: 1.1rem;
+      padding: 1.1rem 1.2rem;
+      border-top: 2px solid #1e1e1e;
+    }
+
+    .route-table tfoot td:last-child {
+      text-align: right;
+    }
+
+    .total-km {
+      color: #f9c74f;
+      font-size: 1.3rem;
+    }
+
+    /* crew list */
+    .crew-list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.8rem 1.5rem;
+      align-items: center;
+      background: #f6f3ee;
+      padding: 1.2rem 1.8rem;
+      border-radius: 50px;
+      border: 2px solid #1e1e1e;
+      margin-top: 0.5rem;
+    }
+
+    .crew-list strong {
+      font-weight: 700;
+      letter-spacing: 0.03em;
+      text-transform: uppercase;
+      font-size: 0.85rem;
+      color: #4f4f4f;
+      margin-right: 0.4rem;
+    }
+
+    .crew-chip {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      background: white;
+      padding: 0.4rem 1rem 0.4rem 0.8rem;
+      border-radius: 40px;
+      border: 1.5px solid #1e1e1e;
+      font-weight: 600;
+      font-size: 0.95rem;
+    }
+
+    .crew-chip i {
+      color: #b45309;
+      font-size: 0.9rem;
+    }
+
+    .crew-chip .chip-photo {
+      width: 24px;
+      height: 24px;
+      border-radius: 50%;
+      overflow: hidden;
+      border: 1.5px solid #1e1e1e;
+      background: #d9e2e8;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 0.7rem;
+      font-weight: 700;
+      flex-shrink: 0;
+    }
+
+    .crew-chip .chip-photo img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+    }
+
+    .crew-chip.inactive-chip {
+      background: #ece9e3;
+      color: #8a8a8a;
+      border-color: #b9b1a6;
+      border-style: dashed;
+      font-weight: 500;
+      opacity: 0.8;
+    }
+
+    .crew-chip.inactive-chip i {
+      color: #9e9e9e;
+    }
+
+    .crew-chip.inactive-chip .chip-photo {
+      filter: grayscale(0.6);
+    }
+
+    .crew-note {
+      width: 100%;
+      font-size: 0.8rem;
+      color: #6f6f6f;
+      margin-top: 0.4rem;
+      padding-left: 0.6rem;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .crew-note i {
+      color: #b45309;
+      font-size: 0.75rem;
+    }
+
+    .mission-report.alt-accent {
+      border-color: #b45309;
+      box-shadow: 0 10px 0 #d6b88a;
+    }
+
+    .mission-report.alt-accent .report-badge {
+      background: #b45309;
+      border-color: #b45309;
+    }
+
+    .mission-report.alt-accent .report-badge i {
+      color: #ffffff;
+    }
+
+    .mission-report.alt-accent h2 i {
+      color: #b45309;
+    }
+
+    /* ---------- MISSION 003 — LOADING / MYSTERY ---------- */
+    .mission-report.mystery {
+      border: 2px dashed #7a7a7a;
+      background: linear-gradient(145deg, #1a1a1a 0%, #2a2a2a 100%);
+      color: #f9f7f3;
+      box-shadow: 0 10px 0 #3a3a3a;
+      overflow: hidden;
+      position: relative;
+    }
+
+    /* subtle animated grid / scanlines */
+    .mission-report.mystery::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background-image: 
+        linear-gradient(rgba(255, 255, 255, 0.03) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
+      background-size: 40px 40px;
+      pointer-events: none;
+      animation: scan 20s linear infinite;
+    }
+
+    @keyframes scan {
+      0% { background-position: 0 0, 0 0; }
+      100% { background-position: 40px 40px, 40px 40px; }
+    }
+
+    .mission-report.mystery .report-badge {
+      background: #f9c74f;
+      color: #1e1e1e;
+      border-color: #f9c74f;
+    }
+
+    .mission-report.mystery .report-badge i {
+      color: #1e1e1e;
+    }
+
+    .mission-report.mystery h2 {
+      color: #f9f7f3;
+    }
+
+    .mission-report.mystery h2 i {
+      color: #f9c74f;
+    }
+
+    .mystery-meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 1.2rem 2.5rem;
+      font-size: 1rem;
+      font-weight: 500;
+      color: #d0d0d0;
+      background: rgba(255, 255, 255, 0.06);
+      padding: 1rem 1.5rem;
+      border-radius: 60px;
+      margin: 1.2rem 0 1.8rem;
+      border: 1px dashed #6a6a6a;
+      align-items: center;
+    }
+
+    .mystery-meta span {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .mystery-meta i {
+      color: #f9c74f;
+      font-size: 1.1rem;
+    }
+
+    .mystery-block {
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px dashed #6a6a6a;
+      border-radius: 30px;
+      padding: 2rem 1.8rem;
+      margin: 1.5rem 0 0.5rem;
+      text-align: center;
+      position: relative;
+      z-index: 1;
+    }
+
+    .loading-line {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 14px;
+      font-size: 1.6rem;
+      font-weight: 600;
+      letter-spacing: 0.04em;
+      color: #f9c74f;
+      margin-bottom: 1rem;
+      flex-wrap: wrap;
+    }
+
+    .loading-line i {
+      font-size: 1.8rem;
+      color: #f9c74f;
+    }
+
+    .dots {
+      display: inline-flex;
+      gap: 6px;
+      margin-left: 6px;
+    }
+
+    .dots span {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #f9c74f;
+      animation: blink 1.2s infinite ease-in-out;
+    }
+
+    .dots span:nth-child(2) { animation-delay: 0.2s; }
+    .dots span:nth-child(3) { animation-delay: 0.4s; }
+    .dots span:nth-child(4) { animation-delay: 0.6s; }
+    .dots span:nth-child(5) { animation-delay: 0.8s; }
+    .dots span:nth-child(6) { animation-delay: 1.0s; }
+
+    @keyframes blink {
+      0%, 80%, 100% { opacity: 0.2; transform: scale(0.8); }
+      40% { opacity: 1; transform: scale(1.2); }
+    }
+
+    .progress-bar {
+      width: 100%;
+      max-width: 500px;
+      height: 16px;
+      background: rgba(255, 255, 255, 0.1);
+      border-radius: 30px;
+      margin: 1.5rem auto 1rem;
+      border: 1.5px solid #5a5a5a;
+      overflow: hidden;
+      position: relative;
+    }
+
+    .progress-fill {
+      height: 100%;
+      width: 38%;
+      background: repeating-linear-gradient(
+        -45deg,
+        #f9c74f,
+        #f9c74f 12px,
+        #e0a82e 12px,
+        #e0a82e 24px
+      );
+      border-radius: 30px;
+      animation: load 3.5s ease-in-out infinite;
+      box-shadow: 0 0 12px rgba(249, 199, 79, 0.5);
+    }
+
+    @keyframes load {
+      0% { width: 18%; }
+      50% { width: 62%; }
+      100% { width: 28%; }
+    }
+
+    .mystery-note {
+      font-size: 0.95rem;
+      color: #a8a8a8;
+      margin-top: 0.8rem;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .mystery-note i {
+      color: #f9c74f;
+    }
+
+    .mystery-dest {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      background: rgba(249, 199, 79, 0.12);
+      border: 1.5px dashed #f9c74f;
+      padding: 0.6rem 1.6rem;
+      border-radius: 60px;
+      font-size: 1.1rem;
+      font-weight: 600;
+      color: #f9c74f;
+      margin: 1rem auto 0.5rem;
+    }
+
+    .mystery-dest i {
+      font-size: 1.2rem;
+    }
+
+    /* ---------- MOTTO ---------- */
+    .motto {
+      text-align: center;
+      background: #1e1e1e;
+      color: #f9f7f3;
+      padding: 2.2rem 1.5rem;
+      border-radius: 100px 100px 40px 40px;
+      margin-top: 3rem;
+      border: 2px solid #1e1e1e;
+    }
+
+    .motto blockquote {
+      font-size: 1.6rem;
+      font-weight: 500;
+      max-width: 750px;
+      margin: 0 auto;
+      line-height: 1.4;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    .motto blockquote i {
+      color: #f9c74f;
+      font-size: 2rem;
+    }
+
+    .motto small {
+      display: block;
+      margin-top: 1rem;
+      font-size: 0.95rem;
+      font-weight: 400;
+      color: #cbcbcb;
+      letter-spacing: 0.03em;
+    }
+
+    /* ---------- RESPONSIVE ---------- */
+    @media (max-width: 700px) {
+      body { padding: 1rem 0.8rem; }
+      .hero h1 { font-size: 2.2rem; padding: 0.5rem 1.2rem; }
+      .hero h1 i { font-size: 1.6rem; }
+      .hero p { font-size: 1rem; }
+      .group-grid { gap: 1rem; }
+      .card { flex: 0 1 160px; padding: 1.5rem 1rem 1.2rem; }
+      .avatar { width: 80px; height: 80px; font-size: 2rem; }
+      .member-name { font-size: 1.2rem; }
+      .status-badge { font-size: 0.6rem; padding: 0.2rem 0.6rem; top: 10px; right: 10px; }
+      .stats { gap: 1.2rem; padding: 1rem 1.2rem; border-radius: 40px; }
+      .stat-item { gap: 6px; }
+      .stat-number { font-size: 1.3rem; }
+      .motto blockquote { font-size: 1.2rem; }
+
+      .section-title { font-size: 1.5rem; gap: 10px; }
+      .section-title span { font-size: 0.9rem; padding: 0.2rem 1rem; }
+
+      .mission-report { padding: 1.5rem 1.2rem; border-radius: 30px; }
+      .mission-report h2 { font-size: 1.6rem; }
+      .mission-report h2 i { font-size: 1.4rem; }
+      .report-meta { font-size: 0.85rem; gap: 0.8rem 1.2rem; padding: 0.8rem 1rem; border-radius: 30px; }
+      .route-table th, .route-table td { padding: 0.7rem 0.8rem; font-size: 0.85rem; }
+      .route-table tfoot td { font-size: 0.95rem; padding: 0.9rem 0.8rem; }
+      .crew-list { padding: 1rem; border-radius: 30px; gap: 0.6rem; }
+      .crew-chip { font-size: 0.8rem; padding: 0.3rem 0.8rem 0.3rem 0.6rem; }
+      .crew-chip .chip-photo { width: 20px; height: 20px; }
+
+      .loading-line { font-size: 1.2rem; }
+      .loading-line i { font-size: 1.4rem; }
+      .mystery-meta { font-size: 0.85rem; gap: 0.8rem 1.2rem; padding: 0.8rem 1rem; border-radius: 30px; }
+      .mystery-block { padding: 1.4rem 1rem; }
+      .mystery-dest { font-size: 0.95rem; padding: 0.5rem 1.2rem; }
+    }
+
+    @media (max-width: 480px) {
+      .group-grid { flex-direction: column; align-items: center; }
+      .card { width: 100%; max-width: 280px; }
+      .stats { flex-direction: column; align-items: flex-start; gap: 0.8rem; border-radius: 30px; }
+
+      .route-table { font-size: 0.8rem; }
+      .route-table th, .route-table td { padding: 0.5rem 0.6rem; }
+      .route-table .seg-icon { display: none; }
+      .km-badge { font-size: 0.75rem; padding: 0.1rem 0.6rem; }
+
+      .loading-line { font-size: 1rem; }
+      .dots span { width: 6px; height: 6px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <!-- ========== HEADER ========== -->
+    <div class="hero">
+      <h1>
+        <i class="fas fa-terminal"></i> 
+        CYCLE<span>.exe</span>
+        <i class="fas fa-bicycle"></i>
+      </h1>
+      <p>// zero excuses</p>
+    </div>
+
+    <!-- ========== MEMBER CARDS ========== -->
+    <div class="group-grid">
+      <!-- 1. ANANTA -->
+      <div class="card">
+        <div class="status-badge active"><i class="fas fa-circle"></i> Active</div>
+        <div class="avatar">
+          <img src="images/Ananta.png" alt="Ananta" onerror="this.style.display='none'; this.parentElement.querySelector('.fallback').style.display='flex';">
+          <span class="fallback" style="display:none;">A</span>
+        </div>
+        <div class="member-name">Ananta</div>
+        <div class="member-role">Captain</div>
+      </div>
+
+      <!-- 2. JOY -->
+      <div class="card">
+        <div class="status-badge active"><i class="fas fa-circle"></i> Active</div>
+        <div class="avatar">
+          <img src="images/Joy.png" alt="Joy" onerror="this.style.display='none'; this.parentElement.querySelector('.fallback').style.display='flex';">
+          <span class="fallback" style="display:none;">J</span>
+        </div>
+        <div class="member-name">Joy</div>
+        <div class="member-role">Climber</div>
+      </div>
+
+      <!-- 3. BORSON -->
+      <div class="card">
+        <div class="status-badge active"><i class="fas fa-circle"></i> Active</div>
+        <div class="avatar">
+          <img src="images/Borson.png" alt="Borson" onerror="this.style.display='none'; this.parentElement.querySelector('.fallback').style.display='flex';">
+          <span class="fallback" style="display:none;">B</span>
+        </div>
+        <div class="member-name">Borson</div>
+        <div class="member-role">Sprinter</div>
+      </div>
+
+      <!-- 4. SAHAL -->
+      <div class="card">
+        <div class="status-badge active"><i class="fas fa-circle"></i> Active</div>
+        <div class="avatar">
+          <img src="images/Sahal.png" alt="Sahal" onerror="this.style.display='none'; this.parentElement.querySelector('.fallback').style.display='flex';">
+          <span class="fallback" style="display:none;">S</span>
+        </div>
+        <div class="member-name">Sahal</div>
+        <div class="member-role">All-rounder</div>
+      </div>
+
+      <!-- 5. FARIQ -->
+      <div class="card">
+        <div class="status-badge active"><i class="fas fa-circle"></i> Active</div>
+        <div class="avatar">
+          <img src="images/Fariq.png" alt="Fariq" onerror="this.style.display='none'; this.parentElement.querySelector('.fallback').style.display='flex';">
+          <span class="fallback" style="display:none;">F</span>
+        </div>
+        <div class="member-name">Fariq</div>
+        <div class="member-role">Mechanic</div>
+      </div>
+
+      <!-- 6. ADIL — INACTIVE -->
+      <div class="card inactive">
+        <div class="status-badge inactive"><i class="fas fa-circle"></i> Inactive</div>
+        <div class="avatar">
+          <span class="fallback" style="display:flex;">A</span>
+        </div>
+        <div class="member-name">Adil</div>
+        <div class="member-role">Former Rider</div>
+      </div>
+    </div>
+
+    <!-- ========== STATS BAR ========== -->
+    <div class="stats">
+      <div class="stat-item">
+        <i class="fas fa-users stat-icon"></i>
+        <div class="stat-content">
+          <span class="stat-number">6</span>
+          <span class="stat-label">total riders</span>
+        </div>
+      </div>
+      <div class="stat-item">
+        <i class="fas fa-user-check stat-icon"></i>
+        <div class="stat-content">
+          <span class="stat-number">5</span>
+          <span class="stat-label">active</span>
+        </div>
+      </div>
+      <div class="stat-item">
+        <i class="fas fa-road stat-icon"></i>
+        <div class="stat-content">
+          <span class="stat-number">69.7</span>
+          <span class="stat-label">km total</span>
+        </div>
+      </div>
+      <div class="stat-item">
+        <i class="fas fa-heart stat-icon"></i>
+        <div class="stat-content">
+          <span class="stat-number">100%</span>
+          <span class="stat-label">good vibes</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- ========== MISSION LOG ========== -->
+    <div class="section-title">
+      <i class="fas fa-flag-checkered"></i>
+      Mission Log
+      <span><i class="fas fa-bolt"></i> 2 rides + 1 loading</span>
+    </div>
+
+    <!-- ===== MISSION 001 ===== -->
+    <div class="mission-report">
+      <div class="report-badge">
+        <i class="fas fa-flag"></i> Mission 001
+      </div>
+
+      <h2>
+        <i class="fas fa-map-signs"></i> 
+        Rajendrapur Loop
+      </h2>
+
+      <div class="report-meta">
+        <span><i class="fas fa-calendar-alt"></i> 5 September 2026</span>
+        <span><i class="fas fa-clock"></i> 3:30 PM · Finished 6:40 PM</span>
+        <span><i class="fas fa-hourglass-half"></i> Duration: 3h 10m</span>
+        <span><i class="fas fa-tachometer-alt"></i> Avg speed: ~11.9 km/h</span>
+      </div>
+
+      <table class="route-table">
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>Segment</th>
+            <th style="text-align:right;">Distance</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><span class="seg-icon">1</span></td>
+            <td>Rajendrapur → Shimultoli</td>
+            <td style="text-align:right;"><span class="km-badge">12.6 km</span></td>
+          </tr>
+          <tr>
+            <td><span class="seg-icon">2</span></td>
+            <td>Shimultoli → Joydebpur</td>
+            <td style="text-align:right;"><span class="km-badge">6.1 km</span></td>
+          </tr>
+          <tr>
+            <td><span class="seg-icon">3</span></td>
+            <td>Joydebpur → Paglar Ban</td>
+            <td style="text-align:right;"><span class="km-badge">12.2 km</span></td>
+          </tr>
+          <tr>
+            <td><span class="seg-icon">4</span></td>
+            <td>Paglar Ban → Rajendrapur</td>
+            <td style="text-align:right;"><span class="km-badge">6.8 km</span></td>
+          </tr>
+        </tbody>
+        <tfoot>
+          <tr>
+            <td colspan="2"><i class="fas fa-route"></i> TOTAL DISTANCE</td>
+            <td style="text-align:right;"><span class="total-km">37.7 km</span></td>
+          </tr>
+        </tfoot>
+      </table>
+
+      <div class="crew-list">
+        <strong><i class="fas fa-users"></i> Crew:</strong>
+        <span class="crew-chip">
+          <span class="chip-photo"><img src="https://kommodo.ai/i/R2MWUDXFrYyJeFmAZE0f" alt="Ananta" onerror="this.style.display='none'; this.parentElement.textContent='A';"></span>
+          Ananta
+        </span>
+        <span class="crew-chip">
+          <span class="chip-photo"><img src="https://kommodo.ai/i/6yYOrG2BQ0SNcDQ9WPHt" alt="Joy" onerror="this.style.display='none'; this.parentElement.textContent='J';"></span>
+          Joy
+        </span>
+        <span class="crew-chip">
+          <span class="chip-photo"><img src="https://kommodo.ai/i/EjOyoEq5o1mgkhkhu0sW" alt="Borson" onerror="this.style.display='none'; this.parentElement.textContent='B';"></span>
+          Borson
+        </span>
+        <span class="crew-chip">
+          <span class="chip-photo"><img src="https://kommodo.ai/i/fmCAN62N0Z9mYf2Vlgam" alt="Sahal" onerror="this.style.display='none'; this.parentElement.textContent='S';"></span>
+          Sahal
+        </span>
+        <span class="crew-chip inactive-chip">
+          <span class="chip-photo">A</span>
+          Adil
+        </span>
+        <div class="crew-note">
+          <i class="fas fa-info-circle"></i> Adil has since become inactive and no longer rides with the group.
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== MISSION 002 ===== -->
+    <div class="mission-report alt-accent">
+      <div class="report-badge">
+        <i class="fas fa-flag"></i> Mission 002
+      </div>
+
+      <h2>
+        <i class="fas fa-map-signs"></i> 
+        Nestlé ↔ Nourish Poultry Out-and-Back
+      </h2>
+
+      <div class="report-meta">
+        <span><i class="fas fa-calendar-alt"></i> 12 September 2026</span>
+        <span><i class="fas fa-clock"></i> 3:30 PM · Finished 6:40 PM</span>
+        <span><i class="fas fa-hourglass-half"></i> Duration: 3h 10m</span>
+        <span><i class="fas fa-tachometer-alt"></i> Avg speed: ~10.1 km/h</span>
+      </div>
+
+      <table class="route-table">
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>Segment</th>
+            <th style="text-align:right;">Distance</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><span class="seg-icon">1</span></td>
+            <td>Nestlé → Nourish Poultry &amp; Hatchery Ltd.</td>
+            <td style="text-align:right;"><span class="km-badge">16.0 km</span></td>
+          </tr>
+          <tr>
+            <td><span class="seg-icon">2</span></td>
+            <td>Nourish Poultry &amp; Hatchery Ltd. → Nestlé</td>
+            <td style="text-align:right;"><span class="km-badge">16.0 km</span></td>
+          </tr>
+        </tbody>
+        <tfoot>
+          <tr>
+            <td colspan="2"><i class="fas fa-route"></i> TOTAL DISTANCE</td>
+            <td style="text-align:right;"><span class="total-km">32.0 km</span></td>
+          </tr>
+        </tfoot>
+      </table>
+
+      <div class="crew-list">
+        <strong><i class="fas fa-users"></i> Crew:</strong>
+        <span class="crew-chip">
+          <span class="chip-photo"><img src="https://kommodo.ai/i/R2MWUDXFrYyJeFmAZE0f" alt="Ananta" onerror="this.style.display='none'; this.parentElement.textContent='A';"></span>
+          Ananta
+        </span>
+        <span class="crew-chip">
+          <span class="chip-photo"><img src="https://kommodo.ai/i/6yYOrG2BQ0SNcDQ9WPHt" alt="Joy" onerror="this.style.display='none'; this.parentElement.textContent='J';"></span>
+          Joy
+        </span>
+        <span class="crew-chip">
+          <span class="chip-photo"><img src="https://kommodo.ai/i/EjOyoEq5o1mgkhkhu0sW" alt="Borson" onerror="this.style.display='none'; this.parentElement.textContent='B';"></span>
+          Borson
+        </span>
+        <span class="crew-chip">
+          <span class="chip-photo"><img src="https://kommodo.ai/i/fmCAN62N0Z9mYf2Vlgam" alt="Sahal" onerror="this.style.display='none'; this.parentElement.textContent='S';"></span>
+          Sahal
+        </span>
+        <span class="crew-chip">
+          <span class="chip-photo"><img src="https://kommodo.ai/i/5FJcP9X9EnMrcB0I6QVK" alt="Fariq" onerror="this.style.display='none'; this.parentElement.textContent='F';"></span>
+          Fariq
+        </span>
+        <div class="crew-note">
+          <i class="fas fa-info-circle"></i> Fariq joined the crew for this mission. Adil was inactive and did not ride.
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== MISSION 003 — LOADING / MYSTERY ===== -->
+    <div class="mission-report mystery">
+      <div class="report-badge">
+        <i class="fas fa-hourglass-half"></i> Mission 003 · In Progress
+      </div>
+
+      <h2>
+        <i class="fas fa-question-circle"></i> 
+        Destination: Unknown
+      </h2>
+
+      <div class="mystery-meta">
+        <span><i class="fas fa-calendar-alt"></i> 19 September 2026</span>
+        <span><i class="fas fa-clock"></i> Started 3:30 PM</span>
+        <span><i class="fas fa-spinner fa-spin"></i> Status: Live</span>
+      </div>
+
+      <div class="mystery-block">
+        <div class="mystery-dest">
+          <i class="fas fa-map-pin"></i>
+          to the unknown
+        </div>
+
+        <div class="loading-line">
+          <i class="fas fa-cog fa-spin"></i>
+          LOADING
+          <span class="dots">
+            <span></span><span></span><span></span><span></span><span></span><span></span>
+          </span>
+        </div>
+
+        <div class="progress-bar">
+          <div class="progress-fill"></div>
+        </div>
+
+        <div class="mystery-note">
+          <i class="fas fa-satellite-dish"></i>
+          Route data incoming · distance unknown · crew en route
+        </div>
+      </div>
+
+      <div class="crew-list">
+        <strong><i class="fas fa-users"></i> Crew en route:</strong>
+        <span class="crew-chip">
+          <span class="chip-photo"><img src="https://kommodo.ai/i/R2MWUDXFrYyJeFmAZE0f" alt="Ananta" onerror="this.style.display='none'; this.parentElement.textContent='A';"></span>
+          Ananta
+        </span>
+        <span class="crew-chip">
+          <span class="chip-photo"><img src="https://kommodo.ai/i/6yYOrG2BQ0SNcDQ9WPHt" alt="Joy" onerror="this.style.display='none'; this.parentElement.textContent='J';"></span>
+          Joy
+        </span>
+        <span class="crew-chip">
+          <span class="chip-photo"><img src="https://kommodo.ai/i/EjOyoEq5o1mgkhkhu0sW" alt="Borson" onerror="this.style.display='none'; this.parentElement.textContent='B';"></span>
+          Borson
+        </span>
+        <span class="crew-chip">
+          <span class="chip-photo"><img src="https://kommodo.ai/i/fmCAN62N0Z9mYf2Vlgam" alt="Sahal" onerror="this.style.display='none'; this.parentElement.textContent='S';"></span>
+          Sahal
+        </span>
+        <span class="crew-chip">
+          <span class="chip-photo"><img src="https://kommodo.ai/i/5FJcP9X9EnMrcB0I6QVK" alt="Fariq" onerror="this.style.display='none'; this.parentElement.textContent='F';"></span>
+          Fariq
+        </span>
+        <div class="crew-note" style="color:#a8a8a8;">
+          <i class="fas fa-info-circle" style="color:#f9c74f;"></i> Mission details will update once the ride is complete.
+        </div>
+      </div>
+    </div>
+
+    <!-- ========== MOTTO / FOOTER ========== -->
+    <div class="motto">
+      <blockquote>
+        <i class="fas fa-quote-left"></i>
+        Ride fast, ride far, ride together.
+        <i class="fas fa-quote-right"></i>
+      </blockquote>
+      <small>— Cycle.exe · est. 2026 —</small>
+    </div>
+  </div>
+</body>
+</html>
