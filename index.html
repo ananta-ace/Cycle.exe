@@ -22,6 +22,19 @@
       color: #1e1e1e;
       line-height: 1.5;
       padding: 2rem 1.5rem;
+      /* disable text selection & copy */
+      -webkit-user-select: none;
+      -moz-user-select: none;
+      -ms-user-select: none;
+      user-select: none;
+      -webkit-touch-callout: none;
+    }
+
+    /* disable dragging of images */
+    img {
+      -webkit-user-drag: none;
+      user-drag: none;
+      pointer-events: none;
     }
 
     .page {
@@ -533,8 +546,8 @@
     }
 
     .crew-chip .chip-photo {
-      width: 24px;
-      height: 24px;
+      width: 28px;
+      height: 28px;
       border-radius: 50%;
       overflow: hidden;
       border: 1.5px solid #1e1e1e;
@@ -542,9 +555,10 @@
       display: flex;
       align-items: center;
       justify-content: center;
-      font-size: 0.7rem;
+      font-size: 0.75rem;
       font-weight: 700;
       flex-shrink: 0;
+      position: relative;
     }
 
     .crew-chip .chip-photo img {
@@ -552,6 +566,7 @@
       height: 100%;
       object-fit: cover;
       display: block;
+      border-radius: 50%;
     }
 
     .crew-chip.inactive-chip {
@@ -730,7 +745,7 @@
       .route-table tfoot td { font-size: 0.95rem; padding: 0.9rem 0.8rem; }
       .crew-list { padding: 1rem; border-radius: 30px; gap: 0.6rem; }
       .crew-chip { font-size: 0.8rem; padding: 0.3rem 0.8rem 0.3rem 0.6rem; }
-      .crew-chip .chip-photo { width: 20px; height: 20px; }
+      .crew-chip .chip-photo { width: 22px; height: 22px; }
       .duo-badge { font-size: 0.65rem; padding: 0.2rem 0.7rem; }
     }
 
@@ -830,7 +845,7 @@
         <div class="member-role">CHILL GUY 😎</div>
       </div>
 
-      <!-- 6. ADIL — INACTIVE, 1/3, WITH PHOTO -->
+      <!-- 6. ADIL — INACTIVE, 1/3 -->
       <div class="card inactive">
         <div class="card-badges">
           <div class="status-badge inactive"><i class="fas fa-circle"></i> Inactive</div>
@@ -943,19 +958,19 @@
       <div class="crew-list">
         <strong><i class="fas fa-users"></i> Crew:</strong>
         <span class="crew-chip">
-          <span class="chip-photo"><img src="https://kommodo.ai/i/R2MWUDXFrYyJeFmAZE0f" alt="Ananta" onerror="this.style.display='none'; this.parentElement.textContent='A';"></span>
+          <span class="chip-photo"><img src="images/Ananta.png" alt="Ananta" onerror="this.style.display='none'; this.parentElement.textContent='A';"></span>
           Ananta
         </span>
         <span class="crew-chip">
-          <span class="chip-photo"><img src="https://kommodo.ai/i/6yYOrG2BQ0SNcDQ9WPHt" alt="Joy" onerror="this.style.display='none'; this.parentElement.textContent='J';"></span>
+          <span class="chip-photo"><img src="images/Joy.png" alt="Joy" onerror="this.style.display='none'; this.parentElement.textContent='J';"></span>
           Joy
         </span>
         <span class="crew-chip">
-          <span class="chip-photo"><img src="https://kommodo.ai/i/EjOyoEq5o1mgkhkhu0sW" alt="Borson" onerror="this.style.display='none'; this.parentElement.textContent='B';"></span>
+          <span class="chip-photo"><img src="images/Borson.png" alt="Borson" onerror="this.style.display='none'; this.parentElement.textContent='B';"></span>
           Borson
         </span>
         <span class="crew-chip">
-          <span class="chip-photo"><img src="https://kommodo.ai/i/fmCAN62N0Z9mYf2Vlgam" alt="Sahal" onerror="this.style.display='none'; this.parentElement.textContent='S';"></span>
+          <span class="chip-photo"><img src="images/Sahal.png" alt="Sahal" onerror="this.style.display='none'; this.parentElement.textContent='S';"></span>
           Sahal
         </span>
         <span class="crew-chip inactive-chip">
@@ -1017,23 +1032,23 @@
       <div class="crew-list">
         <strong><i class="fas fa-users"></i> Crew:</strong>
         <span class="crew-chip">
-          <span class="chip-photo"><img src="https://kommodo.ai/i/R2MWUDXFrYyJeFmAZE0f" alt="Ananta" onerror="this.style.display='none'; this.parentElement.textContent='A';"></span>
+          <span class="chip-photo"><img src="images/Ananta.png" alt="Ananta" onerror="this.style.display='none'; this.parentElement.textContent='A';"></span>
           Ananta
         </span>
         <span class="crew-chip">
-          <span class="chip-photo"><img src="https://kommodo.ai/i/6yYOrG2BQ0SNcDQ9WPHt" alt="Joy" onerror="this.style.display='none'; this.parentElement.textContent='J';"></span>
+          <span class="chip-photo"><img src="images/Joy.png" alt="Joy" onerror="this.style.display='none'; this.parentElement.textContent='J';"></span>
           Joy
         </span>
         <span class="crew-chip">
-          <span class="chip-photo"><img src="https://kommodo.ai/i/EjOyoEq5o1mgkhkhu0sW" alt="Borson" onerror="this.style.display='none'; this.parentElement.textContent='B';"></span>
+          <span class="chip-photo"><img src="images/Borson.png" alt="Borson" onerror="this.style.display='none'; this.parentElement.textContent='B';"></span>
           Borson
         </span>
         <span class="crew-chip">
-          <span class="chip-photo"><img src="https://kommodo.ai/i/fmCAN62N0Z9mYf2Vlgam" alt="Sahal" onerror="this.style.display='none'; this.parentElement.textContent='S';"></span>
+          <span class="chip-photo"><img src="images/Sahal.png" alt="Sahal" onerror="this.style.display='none'; this.parentElement.textContent='S';"></span>
           Sahal
         </span>
         <span class="crew-chip">
-          <span class="chip-photo"><img src="https://kommodo.ai/i/5FJcP9X9EnMrcB0I6QVK" alt="Fariq" onerror="this.style.display='none'; this.parentElement.textContent='F';"></span>
+          <span class="chip-photo"><img src="images/Fariq.png" alt="Fariq" onerror="this.style.display='none'; this.parentElement.textContent='F';"></span>
           Fariq
         </span>
         <div class="crew-note">
@@ -1092,11 +1107,11 @@
       <div class="crew-list">
         <strong><i class="fas fa-users"></i> Crew:</strong>
         <span class="crew-chip">
-          <span class="chip-photo"><img src="https://kommodo.ai/i/R2MWUDXFrYyJeFmAZE0f" alt="Ananta" onerror="this.style.display='none'; this.parentElement.textContent='A';"></span>
+          <span class="chip-photo"><img src="images/Ananta.png" alt="Ananta" onerror="this.style.display='none'; this.parentElement.textContent='A';"></span>
           Ananta
         </span>
         <span class="crew-chip">
-          <span class="chip-photo"><img src="https://kommodo.ai/i/6yYOrG2BQ0SNcDQ9WPHt" alt="Joy" onerror="this.style.display='none'; this.parentElement.textContent='J';"></span>
+          <span class="chip-photo"><img src="images/Joy.png" alt="Joy" onerror="this.style.display='none'; this.parentElement.textContent='J';"></span>
           Joy
         </span>
         <div class="crew-note">
@@ -1115,5 +1130,35 @@
       <small>— Cycle.exe · est. 2026 —</small>
     </div>
   </div>
+
+  <!-- block right-click / context menu + copy shortcuts -->
+  <script>
+    // disable right-click context menu
+    document.addEventListener('contextmenu', function(e) {
+      e.preventDefault();
+    });
+
+    // disable common copy / cut / select-all shortcuts
+    document.addEventListener('keydown', function(e) {
+      // Ctrl+C, Ctrl+X, Ctrl+A, Ctrl+U, Ctrl+S, Ctrl+P, F12
+      if (
+        (e.ctrlKey && (e.key === 'c' || e.key === 'C')) ||
+        (e.ctrlKey && (e.key === 'x' || e.key === 'X')) ||
+        (e.ctrlKey && (e.key === 'a' || e.key === 'A')) ||
+        (e.ctrlKey && (e.key === 'u' || e.key === 'U')) ||
+        (e.ctrlKey && (e.key === 's' || e.key === 'S')) ||
+        (e.ctrlKey && (e.key === 'p' || e.key === 'P')) ||
+        e.key === 'F12'
+      ) {
+        e.preventDefault();
+        return false;
+      }
+    });
+
+    // disable drag start on everything
+    document.addEventListener('dragstart', function(e) {
+      e.preventDefault();
+    });
+  </script>
 </body>
 </html>
