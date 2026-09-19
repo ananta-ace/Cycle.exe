@@ -1,0 +1,552 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="icon" type="image/png" href="images/favicon.png">
+  <title>Cycle.exe · Missions</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      font-family: 'Space Grotesk', sans-serif;
+      background: #f9f7f3;
+      color: #1e1e1e;
+      line-height: 1.5;
+      padding: 1.5rem 1.5rem 2rem;
+      -webkit-user-select: none; -moz-user-select: none; -ms-user-select: none; user-select: none;
+      -webkit-touch-callout: none;
+    }
+
+    img { -webkit-user-drag: none; user-drag: none; pointer-events: none; }
+
+    .page { max-width: 1280px; margin: 0 auto; }
+
+    /* ---------- TOP NAV ---------- */
+    .topbar {
+      display: flex; align-items: center; justify-content: space-between;
+      gap: 1rem; margin-bottom: 2.5rem; flex-wrap: wrap;
+    }
+
+    .brand {
+      display: inline-flex; align-items: center; gap: 0.6rem;
+      background: #1e1e1e; color: #f9f7f3;
+      padding: 0.55rem 1.5rem 0.6rem;
+      border-radius: 50px;
+      font-size: 1.5rem; font-weight: 700; letter-spacing: -0.02em;
+      box-shadow: 0 6px 0 #b1b1b1;
+    }
+
+    .brand i { color: #f9c74f; font-size: 1.3rem; }
+    .brand span { color: #f9c74f; }
+
+    .tabs {
+      display: flex; gap: 0.5rem;
+      background: #ffffff;
+      padding: 0.4rem;
+      border-radius: 60px;
+      border: 2px solid #1e1e1e;
+      box-shadow: 0 5px 0 #d6d2ca;
+    }
+
+    .tab {
+      display: inline-flex; align-items: center; gap: 8px;
+      text-decoration: none; color: #1e1e1e;
+      font-weight: 600; font-size: 0.9rem; letter-spacing: 0.02em;
+      padding: 0.55rem 1.2rem;
+      border-radius: 40px;
+      transition: all 0.15s ease;
+      border: 2px solid transparent;
+    }
+
+    .tab i { font-size: 0.9rem; }
+    .tab:hover { background: #f0ede8; }
+    .tab.active { background: #1e1e1e; color: #f9f7f3; border-color: #1e1e1e; }
+    .tab.active i { color: #f9c74f; }
+
+    /* ---------- HERO ---------- */
+    .hero { margin-bottom: 2.5rem; text-align: center; }
+
+    .hero h1 {
+      font-size: 2.6rem; font-weight: 700;
+      letter-spacing: -0.02em; margin-bottom: 0.6rem;
+    }
+
+    .hero h1 i { color: #b45309; font-size: 2.2rem; margin-right: 8px; }
+
+    .hero p {
+      font-size: 1.15rem; color: #4f4f4f;
+      max-width: 640px; margin: 0 auto;
+      border-bottom: 3px dashed #c0c0c0;
+      padding-bottom: 1.5rem;
+    }
+
+    /* ---------- STATS BAR ---------- */
+    .stats {
+      display: flex; flex-wrap: wrap;
+      justify-content: center;
+      gap: 2rem 3.5rem;
+      background: #ffffffd5;
+      backdrop-filter: blur(4px);
+      border: 2px solid #1e1e1e;
+      border-radius: 80px;
+      padding: 1.4rem 2.2rem;
+      margin: 2rem 0 3rem;
+      box-shadow: 0 6px 0 #d6d2ca;
+    }
+
+    .stat-item { display: flex; align-items: center; gap: 12px; }
+    .stat-icon { font-size: 1.9rem; color: #1e1e1e; }
+    .stat-content { display: flex; flex-direction: column; }
+    .stat-number { font-size: 1.7rem; font-weight: 700; line-height: 1; }
+    .stat-label { font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.04em; font-weight: 500; color: #4f4f4f; }
+
+    /* ---------- SECTION TITLE ---------- */
+    .section-title {
+      text-align: center;
+      margin: 3rem 0 2rem;
+      font-size: 2rem; font-weight: 700;
+      letter-spacing: -0.02em;
+      display: flex; align-items: center; justify-content: center;
+      gap: 14px;
+    }
+
+    .section-title i { color: #b45309; font-size: 1.8rem; }
+
+    .section-title span {
+      background: #1e1e1e; color: #f9f7f3;
+      padding: 0.3rem 1.4rem;
+      border-radius: 50px;
+      font-size: 1.1rem;
+      display: inline-flex; align-items: center; gap: 8px;
+    }
+
+    /* ---------- MISSION REPORT ---------- */
+    .mission-report {
+      background: #ffffff;
+      border: 2px solid #1e1e1e;
+      border-radius: 40px;
+      padding: 2.5rem 2rem;
+      margin: 1.5rem 0 2.5rem;
+      box-shadow: 0 10px 0 #d6d2ca;
+      position: relative;
+    }
+
+    .report-badge {
+      display: inline-flex; align-items: center; gap: 10px;
+      background: #1e1e1e; color: #f9f7f3;
+      padding: 0.5rem 1.5rem;
+      border-radius: 50px;
+      font-weight: 600; font-size: 0.95rem;
+      letter-spacing: 0.04em; text-transform: uppercase;
+      margin-bottom: 1.8rem;
+      border: 2px solid #1e1e1e;
+    }
+
+    .report-badge i { color: #f9c74f; }
+
+    .mission-report h2 {
+      font-size: 2.4rem; font-weight: 700;
+      letter-spacing: -0.02em; margin-bottom: 0.4rem;
+      display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+    }
+
+    .mission-report h2 i { color: #b45309; font-size: 2rem; }
+
+    .report-meta {
+      display: flex; flex-wrap: wrap;
+      gap: 1.2rem 2.5rem;
+      font-size: 1rem; font-weight: 500;
+      color: #3b3b3b;
+      background: #f6f3ee;
+      padding: 1rem 1.5rem;
+      border-radius: 60px;
+      margin: 1.2rem 0 1.8rem;
+      border: 1px dashed #b9b1a6;
+      align-items: center;
+    }
+
+    .report-meta span { display: flex; align-items: center; gap: 8px; }
+    .report-meta i { color: #b45309; font-size: 1.1rem; }
+
+    .route-table {
+      width: 100%; border-collapse: collapse;
+      margin: 1.5rem 0 1.8rem;
+      border-radius: 24px; overflow: hidden;
+      border: 2px solid #1e1e1e;
+    }
+
+    .route-table thead { background: #1e1e1e; color: #f9f7f3; }
+
+    .route-table th {
+      padding: 0.9rem 1.2rem; text-align: left;
+      font-weight: 600; font-size: 0.9rem;
+      letter-spacing: 0.05em; text-transform: uppercase;
+    }
+
+    .route-table td {
+      padding: 1rem 1.2rem; font-weight: 500;
+      border-bottom: 1px solid #e0ddd6;
+      font-size: 1rem;
+    }
+
+    .route-table tbody tr:last-child td { border-bottom: none; }
+    .route-table tbody tr:nth-child(even) { background: #f9f7f3; }
+    .route-table tbody tr:hover { background: #f0ede8; }
+
+    .seg-icon {
+      display: inline-flex; align-items: center; justify-content: center;
+      width: 30px; height: 30px; border-radius: 50%;
+      background: #e8e2d9; color: #1e1e1e;
+      font-size: 0.9rem; margin-right: 10px;
+    }
+
+    .km-badge {
+      display: inline-block;
+      background: #1e1e1e; color: #f9c74f;
+      font-weight: 700;
+      padding: 0.2rem 0.9rem;
+      border-radius: 30px;
+      font-size: 0.9rem;
+    }
+
+    .route-table tfoot td {
+      background: #1e1e1e; color: #f9f7f3;
+      font-weight: 700; font-size: 1.1rem;
+      padding: 1.1rem 1.2rem;
+      border-top: 2px solid #1e1e1e;
+    }
+
+    .route-table tfoot td:last-child { text-align: right; }
+    .total-km { color: #f9c74f; font-size: 1.3rem; }
+
+    /* crew list */
+    .crew-list {
+      display: flex; flex-wrap: wrap;
+      gap: 0.8rem 1.5rem;
+      align-items: center;
+      background: #f6f3ee;
+      padding: 1.2rem 1.8rem;
+      border-radius: 50px;
+      border: 2px solid #1e1e1e;
+      margin-top: 0.5rem;
+    }
+
+    .crew-list strong {
+      font-weight: 700; letter-spacing: 0.03em;
+      text-transform: uppercase;
+      font-size: 0.85rem; color: #4f4f4f;
+      margin-right: 0.4rem;
+    }
+
+    .crew-chip {
+      display: flex; align-items: center; gap: 8px;
+      background: white;
+      padding: 0.4rem 1rem 0.4rem 0.8rem;
+      border-radius: 40px;
+      border: 1.5px solid #1e1e1e;
+      font-weight: 600; font-size: 0.95rem;
+    }
+
+    .crew-chip .chip-photo {
+      width: 28px; height: 28px;
+      border-radius: 50%; overflow: hidden;
+      border: 1.5px solid #1e1e1e;
+      background: #d9e2e8;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 0.75rem; font-weight: 700;
+      flex-shrink: 0; position: relative;
+    }
+
+    .crew-chip .chip-photo img { width: 100%; height: 100%; object-fit: cover; display: block; border-radius: 50%; }
+
+    .crew-chip.inactive-chip {
+      background: #ece9e3; color: #8a8a8a;
+      border-color: #b9b1a6; border-style: dashed;
+      font-weight: 500; opacity: 0.8;
+    }
+
+    .crew-chip.inactive-chip .chip-photo { filter: grayscale(0.6); }
+
+    .crew-note {
+      width: 100%; font-size: 0.8rem; color: #6f6f6f;
+      margin-top: 0.4rem; padding-left: 0.6rem;
+      display: flex; align-items: center; gap: 6px;
+    }
+
+    .crew-note i { color: #b45309; font-size: 0.75rem; }
+
+    /* mission accents */
+    .mission-report.alt-accent {
+      border-color: #b45309;
+      box-shadow: 0 10px 0 #d6b88a;
+    }
+    .mission-report.alt-accent .report-badge { background: #b45309; border-color: #b45309; }
+    .mission-report.alt-accent .report-badge i { color: #ffffff; }
+    .mission-report.alt-accent h2 i { color: #b45309; }
+
+    .mission-report.green-accent {
+      border-color: #2e7d32;
+      box-shadow: 0 10px 0 #a8d5aa;
+    }
+    .mission-report.green-accent .report-badge { background: #2e7d32; border-color: #2e7d32; }
+    .mission-report.green-accent .report-badge i { color: #ffffff; }
+    .mission-report.green-accent h2 i { color: #2e7d32; }
+    .mission-report.green-accent .report-meta i { color: #2e7d32; }
+    .mission-report.green-accent .seg-icon { background: #d3e8d4; color: #2e7d32; }
+    .mission-report.green-accent tfoot td { background: #2e7d32; }
+    .mission-report.green-accent .total-km { color: #c8e6c9; }
+    .mission-report.green-accent .crew-note i { color: #2e7d32; }
+
+    .duo-badge {
+      display: inline-flex; align-items: center; gap: 8px;
+      background: #2e7d32; color: #ffffff;
+      font-size: 0.75rem; font-weight: 700;
+      letter-spacing: 0.06em; text-transform: uppercase;
+      padding: 0.3rem 0.9rem;
+      border-radius: 30px;
+      border: 1.5px solid #1e1e1e;
+      margin-left: 8px;
+    }
+
+    .duo-badge i { font-size: 0.7rem; }
+
+    /* ---------- FOOTER ---------- */
+    .motto {
+      text-align: center;
+      background: #1e1e1e; color: #f9f7f3;
+      padding: 2rem 1.5rem;
+      border-radius: 100px 100px 40px 40px;
+      margin-top: 3rem;
+      border: 2px solid #1e1e1e;
+    }
+
+    .motto blockquote {
+      font-size: 1.4rem; font-weight: 500;
+      max-width: 750px; margin: 0 auto; line-height: 1.4;
+      display: flex; align-items: center; justify-content: center;
+      flex-wrap: wrap; gap: 8px;
+    }
+
+    .motto blockquote i { color: #f9c74f; font-size: 1.7rem; }
+    .motto small { display: block; margin-top: 0.9rem; font-size: 0.9rem; color: #cbcbcb; }
+
+    /* ---------- RESPONSIVE ---------- */
+    @media (max-width: 700px) {
+      body { padding: 1rem 0.8rem 1.5rem; }
+      .topbar { justify-content: center; gap: 0.8rem; }
+      .brand { font-size: 1.2rem; padding: 0.45rem 1.2rem; }
+      .brand i { font-size: 1.05rem; }
+      .tab { font-size: 0.8rem; padding: 0.45rem 0.9rem; gap: 6px; }
+      .tab i { font-size: 0.8rem; }
+      .hero h1 { font-size: 1.9rem; }
+      .hero p { font-size: 1rem; }
+      .stats { gap: 1.2rem; padding: 1rem 1.2rem; border-radius: 40px; }
+      .stat-item { gap: 6px; }
+      .stat-number { font-size: 1.3rem; }
+      .section-title { font-size: 1.5rem; gap: 10px; }
+      .section-title span { font-size: 0.9rem; padding: 0.2rem 1rem; }
+      .mission-report { padding: 1.5rem 1.2rem; border-radius: 30px; }
+      .mission-report h2 { font-size: 1.6rem; }
+      .mission-report h2 i { font-size: 1.4rem; }
+      .report-meta { font-size: 0.85rem; gap: 0.8rem 1.2rem; padding: 0.8rem 1rem; border-radius: 30px; }
+      .route-table th, .route-table td { padding: 0.7rem 0.8rem; font-size: 0.85rem; }
+      .route-table tfoot td { font-size: 0.95rem; padding: 0.9rem 0.8rem; }
+      .crew-list { padding: 1rem; border-radius: 30px; gap: 0.6rem; }
+      .crew-chip { font-size: 0.8rem; padding: 0.3rem 0.8rem 0.3rem 0.6rem; }
+      .crew-chip .chip-photo { width: 22px; height: 22px; }
+      .duo-badge { font-size: 0.65rem; padding: 0.2rem 0.7rem; }
+    }
+
+    @media (max-width: 480px) {
+      .stats { flex-direction: column; align-items: flex-start; gap: 0.8rem; border-radius: 30px; }
+      .route-table { font-size: 0.8rem; }
+      .route-table th, .route-table td { padding: 0.5rem 0.6rem; }
+      .route-table .seg-icon { display: none; }
+      .km-badge { font-size: 0.75rem; padding: 0.1rem 0.6rem; }
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <!-- ========== TOP NAV ========== -->
+    <div class="topbar">
+      <div class="brand">
+        <i class="fas fa-terminal"></i> CYCLE<span>.exe</span>
+      </div>
+      <div class="tabs">
+        <a href="index.html" class="tab"><i class="fas fa-users"></i> Members</a>
+        <a href="missions.html" class="tab active"><i class="fas fa-flag-checkered"></i> Missions</a>
+        <a href="gallery.html" class="tab"><i class="fas fa-images"></i> Gallery</a>
+      </div>
+    </div>
+
+    <!-- ========== HERO ========== -->
+    <div class="hero">
+      <h1><i class="fas fa-flag-checkered"></i> Mission Log</h1>
+      <p>Every ride, every route, every rider. Three missions completed so far.</p>
+    </div>
+
+    <!-- ========== STATS BAR ========== -->
+    <div class="stats">
+      <div class="stat-item">
+        <i class="fas fa-users stat-icon"></i>
+        <div class="stat-content">
+          <span class="stat-number">6</span>
+          <span class="stat-label">total riders</span>
+        </div>
+      </div>
+      <div class="stat-item">
+        <i class="fas fa-user-check stat-icon"></i>
+        <div class="stat-content">
+          <span class="stat-number">5</span>
+          <span class="stat-label">active</span>
+        </div>
+      </div>
+      <div class="stat-item">
+        <i class="fas fa-road stat-icon"></i>
+        <div class="stat-content">
+          <span class="stat-number">103.7</span>
+          <span class="stat-label">km total</span>
+        </div>
+      </div>
+      <div class="stat-item">
+        <i class="fas fa-heart stat-icon"></i>
+        <div class="stat-content">
+          <span class="stat-number">100%</span>
+          <span class="stat-label">good vibes</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="section-title">
+      <i class="fas fa-flag-checkered"></i>
+      All Missions
+      <span><i class="fas fa-bolt"></i> 3 rides</span>
+    </div>
+
+    <!-- ===== MISSION 001 ===== -->
+    <div class="mission-report">
+      <div class="report-badge"><i class="fas fa-flag"></i> Mission 001</div>
+      <h2><i class="fas fa-map-signs"></i> Rajendrapur Loop</h2>
+
+      <div class="report-meta">
+        <span><i class="fas fa-calendar-alt"></i> 5 September 2026</span>
+        <span><i class="fas fa-clock"></i> 3:30 PM · Finished 6:40 PM</span>
+        <span><i class="fas fa-hourglass-half"></i> Duration: 3h 10m</span>
+        <span><i class="fas fa-tachometer-alt"></i> Avg speed: ~11.9 km/h</span>
+      </div>
+
+      <table class="route-table">
+        <thead><tr><th>#</th><th>Segment</th><th style="text-align:right;">Distance</th></tr></thead>
+        <tbody>
+          <tr><td><span class="seg-icon">1</span></td><td>Rajendrapur → Shimultoli</td><td style="text-align:right;"><span class="km-badge">12.6 km</span></td></tr>
+          <tr><td><span class="seg-icon">2</span></td><td>Shimultoli → Joydebpur</td><td style="text-align:right;"><span class="km-badge">6.1 km</span></td></tr>
+          <tr><td><span class="seg-icon">3</span></td><td>Joydebpur → Paglar Ban</td><td style="text-align:right;"><span class="km-badge">12.2 km</span></td></tr>
+          <tr><td><span class="seg-icon">4</span></td><td>Paglar Ban → Rajendrapur</td><td style="text-align:right;"><span class="km-badge">6.8 km</span></td></tr>
+        </tbody>
+        <tfoot><tr><td colspan="2"><i class="fas fa-route"></i> TOTAL DISTANCE</td><td style="text-align:right;"><span class="total-km">37.7 km</span></td></tr></tfoot>
+      </table>
+
+      <div class="crew-list">
+        <strong><i class="fas fa-users"></i> Crew:</strong>
+        <span class="crew-chip"><span class="chip-photo"><img src="images/Ananta.png" alt="Ananta" onerror="this.style.display='none'; this.parentElement.textContent='A';"></span> Ananta</span>
+        <span class="crew-chip"><span class="chip-photo"><img src="images/Joy.png" alt="Joy" onerror="this.style.display='none'; this.parentElement.textContent='J';"></span> Joy</span>
+        <span class="crew-chip"><span class="chip-photo"><img src="images/Borson.png" alt="Borson" onerror="this.style.display='none'; this.parentElement.textContent='B';"></span> Borson</span>
+        <span class="crew-chip"><span class="chip-photo"><img src="images/Sahal.png" alt="Sahal" onerror="this.style.display='none'; this.parentElement.textContent='S';"></span> Sahal</span>
+        <span class="crew-chip inactive-chip"><span class="chip-photo"><img src="images/Adil.png" alt="Adil" onerror="this.style.display='none'; this.parentElement.textContent='A';"></span> Adil</span>
+        <div class="crew-note"><i class="fas fa-info-circle"></i> Adil has since become inactive and no longer rides with the group.</div>
+      </div>
+    </div>
+
+    <!-- ===== MISSION 002 ===== -->
+    <div class="mission-report alt-accent">
+      <div class="report-badge"><i class="fas fa-flag"></i> Mission 002</div>
+      <h2><i class="fas fa-map-signs"></i> Nestlé ↔ Nourish Poultry Out-and-Back</h2>
+
+      <div class="report-meta">
+        <span><i class="fas fa-calendar-alt"></i> 12 September 2026</span>
+        <span><i class="fas fa-clock"></i> 3:30 PM · Finished 6:40 PM</span>
+        <span><i class="fas fa-hourglass-half"></i> Duration: 3h 10m</span>
+        <span><i class="fas fa-tachometer-alt"></i> Avg speed: ~10.1 km/h</span>
+      </div>
+
+      <table class="route-table">
+        <thead><tr><th>#</th><th>Segment</th><th style="text-align:right;">Distance</th></tr></thead>
+        <tbody>
+          <tr><td><span class="seg-icon">1</span></td><td>Nestlé → Nourish Poultry &amp; Hatchery Ltd.</td><td style="text-align:right;"><span class="km-badge">16.0 km</span></td></tr>
+          <tr><td><span class="seg-icon">2</span></td><td>Nourish Poultry &amp; Hatchery Ltd. → Nestlé</td><td style="text-align:right;"><span class="km-badge">16.0 km</span></td></tr>
+        </tbody>
+        <tfoot><tr><td colspan="2"><i class="fas fa-route"></i> TOTAL DISTANCE</td><td style="text-align:right;"><span class="total-km">32.0 km</span></td></tr></tfoot>
+      </table>
+
+      <div class="crew-list">
+        <strong><i class="fas fa-users"></i> Crew:</strong>
+        <span class="crew-chip"><span class="chip-photo"><img src="images/Ananta.png" alt="Ananta" onerror="this.style.display='none'; this.parentElement.textContent='A';"></span> Ananta</span>
+        <span class="crew-chip"><span class="chip-photo"><img src="images/Joy.png" alt="Joy" onerror="this.style.display='none'; this.parentElement.textContent='J';"></span> Joy</span>
+        <span class="crew-chip"><span class="chip-photo"><img src="images/Borson.png" alt="Borson" onerror="this.style.display='none'; this.parentElement.textContent='B';"></span> Borson</span>
+        <span class="crew-chip"><span class="chip-photo"><img src="images/Sahal.png" alt="Sahal" onerror="this.style.display='none'; this.parentElement.textContent='S';"></span> Sahal</span>
+        <span class="crew-chip"><span class="chip-photo"><img src="images/Fariq.png" alt="Fariq" onerror="this.style.display='none'; this.parentElement.textContent='F';"></span> Fariq</span>
+        <div class="crew-note"><i class="fas fa-info-circle"></i> Fariq joined the crew for this mission. Adil was inactive and did not ride.</div>
+      </div>
+    </div>
+
+    <!-- ===== MISSION 003 ===== -->
+    <div class="mission-report green-accent">
+      <div class="report-badge"><i class="fas fa-flag"></i> Mission 003</div>
+      <h2>
+        <i class="fas fa-map-signs"></i> Bhakowadi Orphanage Bridge Out-and-Back
+        <span class="duo-badge"><i class="fas fa-user-friends"></i> Duo Ride</span>
+      </h2>
+
+      <div class="report-meta">
+        <span><i class="fas fa-calendar-alt"></i> 19 September 2026</span>
+        <span><i class="fas fa-clock"></i> 4:00 PM · Finished 6:45 PM</span>
+        <span><i class="fas fa-hourglass-half"></i> Duration: 2h 45m</span>
+        <span><i class="fas fa-tachometer-alt"></i> Avg speed: ~12.4 km/h</span>
+      </div>
+
+      <table class="route-table">
+        <thead><tr><th>#</th><th>Segment</th><th style="text-align:right;">Distance</th></tr></thead>
+        <tbody>
+          <tr><td><span class="seg-icon">1</span></td><td>Rajendrapur → Bhakowadi Orphanage Bridge</td><td style="text-align:right;"><span class="km-badge">17.0 km</span></td></tr>
+          <tr><td><span class="seg-icon">2</span></td><td>Bhakowadi Orphanage Bridge → Rajendrapur</td><td style="text-align:right;"><span class="km-badge">17.0 km</span></td></tr>
+        </tbody>
+        <tfoot><tr><td colspan="2"><i class="fas fa-route"></i> TOTAL DISTANCE</td><td style="text-align:right;"><span class="total-km">34.0 km</span></td></tr></tfoot>
+      </table>
+
+      <div class="crew-list">
+        <strong><i class="fas fa-users"></i> Crew:</strong>
+        <span class="crew-chip"><span class="chip-photo"><img src="images/Ananta.png" alt="Ananta" onerror="this.style.display='none'; this.parentElement.textContent='A';"></span> Ananta</span>
+        <span class="crew-chip"><span class="chip-photo"><img src="images/Joy.png" alt="Joy" onerror="this.style.display='none'; this.parentElement.textContent='J';"></span> Joy</span>
+        <div class="crew-note"><i class="fas fa-info-circle"></i> Just the two of us — Borson, Sahal, and Fariq couldn't make it. Adil remains inactive.</div>
+      </div>
+    </div>
+
+    <!-- ========== FOOTER ========== -->
+    <div class="motto">
+      <blockquote>
+        <i class="fas fa-quote-left"></i>
+        Ride fast, ride far, ride together.
+        <i class="fas fa-quote-right"></i>
+      </blockquote>
+      <small>— Cycle.exe · est. 2026 —</small>
+    </div>
+  </div>
+
+  <script>
+    // protection
+    document.addEventListener('contextmenu', e => e.preventDefault());
+    document.addEventListener('keydown', function(e) {
+      if ((e.ctrlKey && ['c','C','x','X','a','A','u','U','s','S','p','P'].includes(e.key)) || e.key === 'F12') {
+        e.preventDefault(); return false;
+      }
+    });
+    document.addEventListener('dragstart', e => e.preventDefault());
+  </script>
+</body>
+</html>
