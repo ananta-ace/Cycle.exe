@@ -22,7 +22,11 @@
       -webkit-touch-callout: none;
     }
 
-    img { -webkit-user-drag: none; user-drag: none; pointer-events: none; }
+    /* only disable drag on images, allow rendering */
+    img {
+      -webkit-user-drag: none;
+      user-drag: none;
+    }
 
     .page { max-width: 1280px; margin: 0 auto; }
 
@@ -130,7 +134,6 @@
       object-fit: cover;
       display: block;
       transition: transform 0.3s ease;
-      pointer-events: auto;
     }
 
     .gallery-item:hover .gallery-photo img { transform: scale(1.05); }
@@ -154,7 +157,6 @@
 
     .gallery-photo .ph-fallback i { font-size: 2.2rem; color: #b9b1a6; }
 
-    /* zoom hint icon overlay */
     .zoom-hint {
       position: absolute;
       top: 10px;
@@ -256,6 +258,11 @@
       box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6), 0 0 0 2px #1e1e1e;
       background: #1e1e1e;
       max-width: 92vw;
+      min-width: 280px;
+      min-height: 200px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
     }
 
     .lightbox-img-wrap img {
@@ -266,6 +273,28 @@
       height: auto;
       object-fit: contain;
       border-radius: 20px;
+    }
+
+    /* lightbox fallback (when image missing) */
+    .lightbox-fallback {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 12px;
+      padding: 3rem 2rem;
+      color: #8a8a8a;
+      font-size: 0.9rem;
+      font-weight: 600;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      text-align: center;
+    }
+
+    .lightbox-fallback i {
+      font-size: 3.5rem;
+      color: #f9c74f;
+      opacity: 0.7;
     }
 
     .lightbox-caption {
@@ -373,7 +402,6 @@
 
     .lightbox-nav i { pointer-events: none; }
 
-    /* counter pill */
     .lightbox-counter {
       position: fixed;
       bottom: 20px;
@@ -433,6 +461,8 @@
       .lightbox-nav.next { right: 10px; }
       .lightbox-caption h3 { font-size: 1rem; }
       .lightbox-caption p { font-size: 0.78rem; }
+      .lightbox-fallback { padding: 2rem 1rem; }
+      .lightbox-fallback i { font-size: 2.5rem; }
     }
 
     @media (max-width: 480px) {
@@ -466,7 +496,7 @@
       <!-- Photo 1 -->
       <div class="gallery-item" onclick="openLightbox(0)">
         <div class="gallery-photo">
-          <img src="images/Mission-002 (1).png" alt="Mission 002" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">
+          <img src="images/gallery1.jpg" alt="Mission 001" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">
           <div class="ph-fallback" style="display:none;">
             <i class="fas fa-image"></i>
             gallery1.jpg
@@ -474,10 +504,10 @@
           <div class="zoom-hint"><i class="fas fa-expand"></i></div>
         </div>
         <div class="gallery-caption">
-          <div class="gallery-title"><i class="fas fa-flag"></i> Mission 002 · Nestlé Out-and-Back</div>
+          <div class="gallery-title"><i class="fas fa-flag"></i> Mission 001 · Rajendrapur Loop</div>
           <div class="gallery-meta">
-            <span><i class="fas fa-calendar-alt"></i> 12 Sep 2026</span>
-            <span><i class="fas fa-road"></i> 32.0 km</span>
+            <span><i class="fas fa-calendar-alt"></i> 5 Sep 2026</span>
+            <span><i class="fas fa-road"></i> 37.7 km</span>
           </div>
         </div>
       </div>
@@ -600,8 +630,12 @@
     </button>
 
     <div class="lightbox-inner" onclick="event.stopPropagation()">
-      <div class="lightbox-img-wrap">
+      <div class="lightbox-img-wrap" id="lightboxImgWrap">
         <img id="lightboxImg" src="" alt="">
+        <div class="lightbox-fallback" id="lightboxFallback" style="display:none;">
+          <i class="fas fa-image"></i>
+          <span id="lightboxFallbackText">image not found</span>
+        </div>
       </div>
       <div class="lightbox-caption">
         <h3 id="lightboxTitle"></h3>
@@ -675,16 +709,32 @@
       currentIndex = index;
       updateLightbox();
       document.getElementById('lightbox').classList.add('open');
+      document.body.style.overflow = 'hidden';
     }
 
     // ========== UPDATE LIGHTBOX CONTENT ==========
     function updateLightbox() {
       const item = galleryData[currentIndex];
       const img = document.getElementById('lightboxImg');
+      const fallback = document.getElementById('lightboxFallback');
+      const fallbackText = document.getElementById('lightboxFallbackText');
 
+      // reset fallback first
+      fallback.style.display = 'none';
+      img.style.display = 'block';
+
+      // set onerror handler BEFORE setting src
+      img.onerror = function() {
+        img.style.display = 'none';
+        fallback.style.display = 'flex';
+        fallbackText.textContent = item.src.split('/').pop() + ' not found';
+      };
+
+      // set the src
       img.src = item.src;
       img.alt = item.title;
 
+      // caption
       document.getElementById('lightboxTitle').innerHTML =
         '<i class="fas ' + item.icon + '"></i> ' + item.title;
 
@@ -707,6 +757,7 @@
     // ========== CLOSE LIGHTBOX ==========
     function closeLightbox() {
       document.getElementById('lightbox').classList.remove('open');
+      document.body.style.overflow = '';
     }
 
     // ========== KEYBOARD ==========
