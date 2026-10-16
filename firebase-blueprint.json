@@ -1,0 +1,195 @@
+{
+  "entities": {
+    "UserPublic": {
+      "title": "UserPublic",
+      "description": "Publicly accessible user profile details",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "displayName": { "type": "string", "maxLength": 80 },
+        "photoURL": { "type": "string", "maxLength": 500 },
+        "bio": { "type": "string", "maxLength": 500 },
+        "role": { "type": "string", "enum": ["PUBLIC", "MEMBER", "ADMIN", "SUPER_ADMIN"] },
+        "isSuspended": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "displayName", "role", "isSuspended", "createdAt"]
+    },
+    "UserPrivate": {
+      "title": "UserPrivate",
+      "description": "Sensitive user identity and login statistics",
+      "type": "object",
+      "properties": {
+        "email": { "type": "string", "maxLength": 128 },
+        "emailVerified": { "type": "boolean" },
+        "lastLoginAt": { "type": "string", "format": "date-time" },
+        "loginCount": { "type": "number" }
+      },
+      "required": ["email", "emailVerified"]
+    },
+    "Post": {
+      "title": "Post",
+      "description": "Community post created by an authorized rider",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "authorId": { "type": "string", "maxLength": 128 },
+        "authorName": { "type": "string", "maxLength": 80 },
+        "authorPhotoURL": { "type": "string", "maxLength": 500 },
+        "content": { "type": "string", "maxLength": 2000 },
+        "photoURLs": { "type": "array" },
+        "likesCount": { "type": "number" },
+        "commentsCount": { "type": "number" },
+        "isHidden": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "authorId", "authorName", "content", "likesCount", "commentsCount", "isHidden", "createdAt"]
+    },
+    "PostLike": {
+      "title": "PostLike",
+      "description": "Like record by an authorized member for a specific post",
+      "type": "object",
+      "properties": {
+        "postId": { "type": "string", "maxLength": 128 },
+        "userId": { "type": "string", "maxLength": 128 },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["postId", "userId", "createdAt"]
+    },
+    "Comment": {
+      "title": "Comment",
+      "description": "Discussion comment on a post",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "postId": { "type": "string", "maxLength": 128 },
+        "authorId": { "type": "string", "maxLength": 128 },
+        "authorName": { "type": "string", "maxLength": 80 },
+        "authorPhotoURL": { "type": "string", "maxLength": 500 },
+        "text": { "type": "string", "maxLength": 1000 },
+        "isReported": { "type": "boolean" },
+        "isDeleted": { "type": "boolean" },
+        "deletedReason": { "type": "string", "maxLength": 200 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "postId", "authorId", "authorName", "text", "isReported", "isDeleted", "createdAt"]
+    },
+    "CommentReport": {
+      "title": "CommentReport",
+      "description": "Report filed against a post or comment for bullying, spam, or abuse",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "targetType": { "type": "string", "enum": ["COMMENT", "POST"] },
+        "targetId": { "type": "string", "maxLength": 128 },
+        "targetAuthorId": { "type": "string", "maxLength": 128 },
+        "targetExcerpt": { "type": "string", "maxLength": 500 },
+        "reporterId": { "type": "string", "maxLength": 128 },
+        "reporterEmail": { "type": "string", "maxLength": 128 },
+        "reason": { "type": "string", "maxLength": 500 },
+        "status": { "type": "string", "enum": ["PENDING", "REVIEWED", "DISMISSED", "ACTION_TAKEN"] },
+        "moderatorNotes": { "type": "string", "maxLength": 500 },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "targetType", "targetId", "reporterId", "reason", "status", "createdAt"]
+    },
+    "Mission": {
+      "title": "Mission",
+      "description": "Community cycling mission managed by Super Admin",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "title": { "type": "string", "maxLength": 120 },
+        "description": { "type": "string", "maxLength": 2000 },
+        "coverPhoto": { "type": "string", "maxLength": 500 },
+        "startDate": { "type": "string", "format": "date-time" },
+        "endDate": { "type": "string", "format": "date-time" },
+        "distanceTargetKm": { "type": "number" },
+        "durationTargetHours": { "type": "number" },
+        "difficulty": { "type": "string", "enum": ["EASY", "MEDIUM", "HARD", "EXTREME"] },
+        "rules": { "type": "string", "maxLength": 2000 },
+        "status": { "type": "string", "enum": ["DRAFT", "PUBLISHED", "ARCHIVED"] },
+        "rewardDescription": { "type": "string", "maxLength": 300 },
+        "createdBy": { "type": "string", "maxLength": 128 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "title", "description", "distanceTargetKm", "difficulty", "status", "createdAt"]
+    },
+    "InvitationCode": {
+      "title": "InvitationCode",
+      "description": "Secure single-use membership invitation code",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "codeHash": { "type": "string", "maxLength": 128 },
+        "displayCodeMasked": { "type": "string", "maxLength": 64 },
+        "isRedeemed": { "type": "boolean" },
+        "redeemedByUserId": { "type": "string", "maxLength": 128 },
+        "redeemedByEmail": { "type": "string", "maxLength": 128 },
+        "expiresAt": { "type": "string", "format": "date-time" },
+        "isRevoked": { "type": "boolean" },
+        "createdBy": { "type": "string", "maxLength": 128 },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "codeHash", "isRedeemed", "isRevoked", "expiresAt", "createdAt"]
+    },
+    "AuditLog": {
+      "title": "AuditLog",
+      "description": "Security audit log for privileged administrative operations",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "actorId": { "type": "string", "maxLength": 128 },
+        "actorEmail": { "type": "string", "maxLength": 128 },
+        "action": { "type": "string", "maxLength": 80 },
+        "targetType": { "type": "string", "maxLength": 80 },
+        "targetId": { "type": "string", "maxLength": 128 },
+        "details": { "type": "string", "maxLength": 1000 },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "actorId", "action", "targetType", "targetId", "createdAt"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/UserPublic" },
+      "description": "Public user profile and assigned community role"
+    },
+    "/users/{userId}/private/info": {
+      "schema": { "$ref": "#/entities/UserPrivate" },
+      "description": "Private sensitive authentication and login info"
+    },
+    "/posts/{postId}": {
+      "schema": { "$ref": "#/entities/Post" },
+      "description": "Community cycling feed posts"
+    },
+    "/posts/{postId}/likes/{userId}": {
+      "schema": { "$ref": "#/entities/PostLike" },
+      "description": "Likes on a community post"
+    },
+    "/posts/{postId}/comments/{commentId}": {
+      "schema": { "$ref": "#/entities/Comment" },
+      "description": "Threaded comments on a community post"
+    },
+    "/reports/{reportId}": {
+      "schema": { "$ref": "#/entities/CommentReport" },
+      "description": "Abuse and moderation reports submitted by members"
+    },
+    "/missions/{missionId}": {
+      "schema": { "$ref": "#/entities/Mission" },
+      "description": "Cycling group missions"
+    },
+    "/invitationCodes/{codeId}": {
+      "schema": { "$ref": "#/entities/InvitationCode" },
+      "description": "Secret membership invitation codes"
+    },
+    "/auditLogs/{logId}": {
+      "schema": { "$ref": "#/entities/AuditLog" },
+      "description": "Super admin privileged audit trail"
+    }
+  }
+}

@@ -1,0 +1,8 @@
+{
+  "name": "Cycle.exe",
+  "description": "Cycling group log, members, mission records, and photo gallery for Cycle.exe.",
+  "permissions": [],
+  "capabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
