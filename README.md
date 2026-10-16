@@ -116,3 +116,29 @@ npm run deploy
 ```
 Then under **Settings > Pages**, choose **Deploy from a branch** and select the `gh-pages` branch with the `/ (root)` folder.
 
+---
+
+## 6. Fixing `Firebase: Error (auth/unauthorized-domain)` for Google Sign-In
+
+### Why this happens:
+For security reasons, Google OAuth and Firebase Authentication reject sign-in attempts from any domain that has not been explicitly authorized in your Firebase Project Console. By default, Firebase only authorizes `localhost` and `<project-id>.firebaseapp.com`.
+
+When you deploy to GitHub Pages (`ananta-ace.github.io`) or access from a preview deployment URL, Firebase throws:
+```
+Firebase: Error (auth/unauthorized-domain)
+```
+
+### How to resolve it in 3 steps:
+
+1. Open your Firebase project's Authentication settings:
+   👉 **[Firebase Console > Authentication > Settings](https://console.firebase.google.com/project/ai-studio-applet-webapp-9be29/authentication/settings)**
+2. Scroll down to the **Authorized domains** card.
+3. Click **Add domain** and enter:
+   - `ananta-ace.github.io` (for your GitHub Pages website)
+   - (Optional) Any custom domain or staging preview domain you are using.
+4. Click **Save**.
+
+That's it! Changes take effect immediately. Refresh your website and clicking **"Continue with Google"** will work seamlessly.
+
+*Note: Cycle.exe also supports direct Email & Password registration and sign-in directly in the Auth Modal, which is not restricted by OAuth domain whitelisting.*
+

@@ -15,16 +15,38 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
+  const [isUnauthorizedDomain, setIsUnauthorizedDomain] = useState(false);
+  const [copiedDomain, setCopiedDomain] = useState(false);
+
   if (!isOpen) return null;
+
+  const currentHostname = typeof window !== 'undefined' ? window.location.hostname : '';
+
+  const handleCopyDomain = async () => {
+    try {
+      await navigator.clipboard.writeText(currentHostname);
+      setCopiedDomain(true);
+      setTimeout(() => setCopiedDomain(false), 2500);
+    } catch {
+      // Fallback
+    }
+  };
 
   const handleGoogleSignIn = async () => {
     try {
       setError(null);
+      setIsUnauthorizedDomain(false);
       setLoading(true);
       await signInWithGoogle();
       onClose();
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Google sign in failed');
+      const message = err instanceof Error ? err.message : String(err);
+      if (message.includes('auth/unauthorized-domain')) {
+        setIsUnauthorizedDomain(true);
+        setError('This domain is not authorized in your Firebase Authentication settings.');
+      } else {
+        setError(message);
+      }
     } finally {
       setLoading(false);
     }
@@ -84,7 +106,63 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
           </p>
         </div>
 
-        {error && (
+        {isUnauthorizedDomain && (
+          <div className="mb-4 p-3.5 bg-amber-50 border-2 border-amber-400 rounded-2xl text-xs text-amber-900 space-y-2.5">
+            <div className="flex items-start gap-2">
+              <i className="fas fa-shield-alt text-amber-600 text-sm mt-0.5"></i>
+              <div>
+                <p className="font-bold text-amber-950">Action Required: Authorize Domain in Firebase</p>
+                <p className="mt-0.5 text-zinc-700 leading-relaxed">
+                  Firebase blocks Google Sign-In on new domains until they are added to your project's Authorized Domains list.
+                </p>
+              </div>
+            </div>
+
+            <div className="bg-white p-2.5 rounded-xl border border-amber-300 flex items-center justify-between gap-2">
+              <div className="overflow-hidden">
+                <span className="text-[10px] uppercase font-bold text-zinc-500 block">Domain to authorize:</span>
+                <code className="font-mono font-bold text-xs text-zinc-900 truncate block">
+                  {currentHostname || 'ananta-ace.github.io'}
+                </code>
+              </div>
+              <button
+                type="button"
+                onClick={handleCopyDomain}
+                className="px-2.5 py-1.5 bg-[#f9c74f] hover:bg-[#e0b040] text-black font-bold text-xs rounded-lg transition-colors flex items-center gap-1.5 shrink-0 border border-black/20"
+              >
+                <i className={copiedDomain ? 'fas fa-check text-green-700' : 'fas fa-copy'}></i>
+                <span>{copiedDomain ? 'Copied!' : 'Copy'}</span>
+              </button>
+            </div>
+
+            <div className="text-[11px] text-zinc-700 space-y-1">
+              <p className="font-bold text-zinc-900">How to fix in 1 minute:</p>
+              <ol className="list-decimal list-inside space-y-0.5 pl-1 text-zinc-600">
+                <li>
+                  Open{' '}
+                  <a
+                    href="https://console.firebase.google.com/project/ai-studio-applet-webapp-9be29/authentication/settings"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-blue-700 underline font-semibold"
+                  >
+                    Firebase Console &gt; Authentication &gt; Settings
+                  </a>
+                </li>
+                <li>
+                  Scroll to <strong>Authorized domains</strong> and click <strong>Add domain</strong>
+                </li>
+                <li>Paste the copied domain and click <strong>Save</strong></li>
+              </ol>
+            </div>
+
+            <div className="pt-1 border-t border-amber-200 text-zinc-600 italic text-[11px]">
+              💡 Tip: You can also register or sign in immediately using the Email &amp; Password form below!
+            </div>
+          </div>
+        )}
+
+        {error && !isUnauthorizedDomain && (
           <div className="mb-4 p-3 bg-red-50 border-2 border-red-500 rounded-2xl text-xs font-semibold text-red-700 flex items-start gap-2">
             <i className="fas fa-exclamation-circle text-sm mt-0.5"></i>
             <span>{error}</span>
