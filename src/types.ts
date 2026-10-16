@@ -7,6 +7,7 @@ export type TabType =
   | 'missions'
   | 'gallery'
   | 'profile'
+  | 'notifications'
   | 'admin'
   | 'superadmin';
 
@@ -18,7 +19,14 @@ export interface UserProfile {
   photoURL: string;
   bio: string;
   role: UserRole;
+  customTitle?: string;
+  adminMembershipStatus?: 'NONE' | 'PENDING' | 'APPROVED' | 'REJECTED' | 'SUSPENDED';
+  isAdminMember?: boolean;
   isSuspended: boolean;
+  isAccountSuspended?: boolean;
+  welcomeSeenForRole?: string;
+  ratingAverage?: number;
+  ratingCount?: number;
   createdAt: string;
   updatedAt: string;
 }
@@ -32,11 +40,80 @@ export interface Member {
   active: boolean;
   attend: string;
   perfect: boolean;
-  missions: {
+  bio?: string;
+  ratingAverage?: number;
+  ratingCount?: number;
+  isCustomMember?: boolean;
+  missions?: {
     m1: boolean;
     m2: boolean;
     m3: boolean;
   };
+}
+
+export interface AdminMembershipApplication {
+  id: string;
+  userId: string;
+  applicantName: string;
+  applicantEmail: string;
+  applicantPhotoURL: string;
+  reason: string;
+  cyclingExperience: string;
+  requestedTitle?: string;
+  status: 'PENDING' | 'APPROVED' | 'REJECTED' | 'SUSPENDED';
+  adminRecommendations?: {
+    adminId: string;
+    adminName: string;
+    recommendation: 'APPROVE' | 'REJECT';
+    comment: string;
+    createdAt: string;
+  }[];
+  rejectionReason?: string;
+  reviewedBy?: string;
+  reviewedAt?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface MemberRating {
+  id: string;
+  targetMemberId: string;
+  raterId: string;
+  raterName: string;
+  rating: number; // 1 to 5
+  comment?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface GalleryPhoto {
+  id: string;
+  title: string;
+  description?: string;
+  photoURL: string;
+  uploadedBy: string;
+  uploadedByName?: string;
+  uploadedAt: string;
+}
+
+export interface AppNotification {
+  id: string;
+  recipientId: string; // user UID or 'SUPER_ADMIN' or 'ADMINS'
+  type:
+    | 'APPLICATION_SUBMITTED'
+    | 'APPLICATION_APPROVED'
+    | 'APPLICATION_REJECTED'
+    | 'STATUS_CHANGED'
+    | 'NEW_RATING'
+    | 'SYSTEM';
+  title: string;
+  message: string;
+  link?: string;
+  applicantId?: string;
+  applicantName?: string;
+  applicantPhotoURL?: string;
+  isRead: boolean;
+  createdAt: string;
 }
 
 export interface MissionSegment {
@@ -49,7 +126,7 @@ export interface MissionReport {
   id: string;
   num?: string;
   name?: string;
-  title?: string;
+  title: string;
   coverPhoto?: string;
   description?: string;
   shortDate?: string;
@@ -69,12 +146,15 @@ export interface MissionReport {
   cls?: string;
   variant?: 'alt-accent' | 'green-accent' | 'default';
   isDuo?: boolean;
-  status: 'DRAFT' | 'PUBLISHED' | 'ARCHIVED';
+  status: 'COMING_SOON' | 'UPCOMING' | 'ONGOING' | 'ENDED' | 'CANCELLED' | 'DRAFT' | 'PUBLISHED';
+  location?: string;
+  instructions?: string;
   segments?: MissionSegment[];
   crewIds?: string[];
   crewNote?: string;
   createdBy?: string;
   createdAt?: string;
+  updatedAt?: string;
 }
 
 export interface Post {
@@ -82,6 +162,7 @@ export interface Post {
   authorId: string;
   authorName: string;
   authorPhotoURL: string;
+  authorTitle?: string;
   content: string;
   photoURLs: string[];
   likesCount: number;
@@ -94,10 +175,13 @@ export interface Post {
 export interface PostComment {
   id: string;
   postId: string;
+  parentId?: string | null; // For nested replies!
+  replyToAuthor?: string;
   authorId: string;
   authorName: string;
   authorPhotoURL: string;
   text: string;
+  replyCount?: number;
   isReported: boolean;
   isDeleted: boolean;
   deletedReason?: string;

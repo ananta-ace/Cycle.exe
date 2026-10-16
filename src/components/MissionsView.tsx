@@ -35,7 +35,9 @@ export const MissionsView: React.FC = () => {
   const [durationHours, setDurationHours] = useState('2.5');
   const [difficulty, setDifficulty] = useState<'EASY' | 'MEDIUM' | 'HARD' | 'EXTREME'>('MEDIUM');
   const [rules, setRules] = useState('');
-  const [status, setStatus] = useState<'DRAFT' | 'PUBLISHED' | 'ARCHIVED'>('PUBLISHED');
+  const [location, setLocation] = useState('');
+  const [instructions, setInstructions] = useState('');
+  const [status, setStatus] = useState<'COMING_SOON' | 'UPCOMING' | 'ONGOING' | 'ENDED' | 'CANCELLED' | 'DRAFT' | 'PUBLISHED'>('UPCOMING');
   const [reward, setReward] = useState('');
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
@@ -76,7 +78,9 @@ export const MissionsView: React.FC = () => {
     setDurationHours('3');
     setDifficulty('MEDIUM');
     setRules('Helmets required. Respect traffic lights. Stay with the group paceline.');
-    setStatus('PUBLISHED');
+    setLocation('Hatirjheel Cycling Loop / Dhaka');
+    setInstructions('Arrive 15 minutes before departure. Check tire pressure and front/rear lights.');
+    setStatus('UPCOMING');
     setReward('Cycle.exe Mission Finisher Badge');
     setFormError(null);
     setModalOpen(true);
@@ -93,7 +97,9 @@ export const MissionsView: React.FC = () => {
     setDurationHours(String(m.durationTargetHours || 2));
     setDifficulty(m.difficulty || 'MEDIUM');
     setRules(m.rules || '');
-    setStatus(m.status || 'PUBLISHED');
+    setLocation(m.location || '');
+    setInstructions(m.instructions || '');
+    setStatus(m.status || 'UPCOMING');
     setReward(m.rewardDescription || '');
     setFormError(null);
     setModalOpen(true);
@@ -125,10 +131,13 @@ export const MissionsView: React.FC = () => {
         durationTargetHours: Number(durationHours) || 0,
         difficulty,
         rules: rules.trim(),
+        location: location.trim(),
+        instructions: instructions.trim(),
         status,
         rewardDescription: reward.trim(),
         createdBy: user?.uid || 'super-admin',
         createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
         segments: [],
       };
 
@@ -639,15 +648,61 @@ export const MissionsView: React.FC = () => {
 
               <div>
                 <label className="block text-xs font-bold uppercase tracking-wider mb-1 text-zinc-700">
-                  Finisher Reward Description
+                  Location / Route Itinerary
                 </label>
                 <input
                   type="text"
-                  value={reward}
-                  onChange={(e) => setReward(e.target.value)}
-                  placeholder="e.g. Cycle.exe Gold Medal Badge"
+                  value={location}
+                  onChange={(e) => setLocation(e.target.value)}
+                  placeholder="e.g. Dhaka - Hatirjheel Outer Loop (Scenic Waterfront)"
                   className="neo-input text-sm py-2"
                 />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold uppercase tracking-wider mb-1 text-zinc-700">
+                  Participation Instructions
+                </label>
+                <textarea
+                  value={instructions}
+                  onChange={(e) => setInstructions(e.target.value)}
+                  rows={2}
+                  placeholder="Meeting point at Rampura bridge, check bike tires, lights required for evening riders..."
+                  className="neo-input text-sm py-2 resize-none"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold uppercase tracking-wider mb-1 text-zinc-700">
+                    Mission Status
+                  </label>
+                  <select
+                    value={status}
+                    onChange={(e) => setStatus(e.target.value as any)}
+                    className="neo-input text-sm py-2 font-bold"
+                  >
+                    <option value="COMING_SOON">Coming Soon</option>
+                    <option value="UPCOMING">Upcoming</option>
+                    <option value="ONGOING">Ongoing (Active Now)</option>
+                    <option value="ENDED">Ended</option>
+                    <option value="CANCELLED">Cancelled</option>
+                    <option value="DRAFT">Draft (Private)</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold uppercase tracking-wider mb-1 text-zinc-700">
+                    Finisher Reward
+                  </label>
+                  <input
+                    type="text"
+                    value={reward}
+                    onChange={(e) => setReward(e.target.value)}
+                    placeholder="e.g. Gold Finisher Badge"
+                    className="neo-input text-sm py-2"
+                  />
+                </div>
               </div>
 
               <div className="flex justify-end gap-2 pt-2">

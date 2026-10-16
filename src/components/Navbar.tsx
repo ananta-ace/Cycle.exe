@@ -6,10 +6,20 @@ interface NavbarProps {
   activeTab: TabType;
   onSelectTab: (tab: TabType) => void;
   onOpenAuth: () => void;
+  onOpenNotifications: () => void;
+  theme: 'light' | 'dark';
+  onToggleTheme: () => void;
 }
 
-export const Navbar: React.FC<NavbarProps> = ({ activeTab, onSelectTab, onOpenAuth }) => {
-  const { user, profile, role, isSuperAdmin, isAdmin } = useAuth();
+export const Navbar: React.FC<NavbarProps> = ({
+  activeTab,
+  onSelectTab,
+  onOpenAuth,
+  onOpenNotifications,
+  theme,
+  onToggleTheme,
+}) => {
+  const { user, profile, role, isSuperAdmin, isAdmin, unreadNotificationsCount } = useAuth();
 
   return (
     <div className="topbar">
@@ -89,8 +99,36 @@ export const Navbar: React.FC<NavbarProps> = ({ activeTab, onSelectTab, onOpenAu
         )}
       </nav>
 
-      {/* Auth / Profile Button */}
-      <div className="flex items-center gap-3">
+      {/* Right-hand utilities & Auth */}
+      <div className="flex items-center gap-2 sm:gap-3">
+        {/* Dark / Light Theme Switcher */}
+        <button
+          type="button"
+          onClick={onToggleTheme}
+          className="w-10 h-10 rounded-full bg-white border-2 border-zinc-900 shadow-[0_3px_0_#d6d2ca] flex items-center justify-center hover:scale-105 active:scale-95 transition text-base"
+          title={theme === 'dark' ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
+          aria-label="Toggle theme"
+        >
+          <i className={`fas ${theme === 'dark' ? 'fa-sun text-amber-500' : 'fa-moon text-zinc-700'}`}></i>
+        </button>
+
+        {/* Notification Bell (Visible to all users, shows real-time badge when logged in) */}
+        <button
+          type="button"
+          onClick={onOpenNotifications}
+          className="relative w-10 h-10 rounded-full bg-white border-2 border-zinc-900 shadow-[0_3px_0_#d6d2ca] flex items-center justify-center text-zinc-800 hover:scale-105 active:scale-95 transition"
+          title="Notifications"
+          aria-label="Notifications"
+        >
+          <i className="fas fa-bell text-sm"></i>
+          {unreadNotificationsCount > 0 && (
+            <span className="absolute -top-1 -right-1 bg-red-600 text-white text-[10px] font-black w-5 h-5 rounded-full flex items-center justify-center border-2 border-zinc-900 animate-pulse">
+              {unreadNotificationsCount > 9 ? '9+' : unreadNotificationsCount}
+            </span>
+          )}
+        </button>
+
+        {/* Profile / Auth Button */}
         {user ? (
           <button
             type="button"
@@ -108,7 +146,7 @@ export const Navbar: React.FC<NavbarProps> = ({ activeTab, onSelectTab, onOpenAu
                 profile?.displayName?.charAt(0).toUpperCase() || 'U'
               )}
             </div>
-            <span className="font-bold text-sm max-w-[100px] truncate">
+            <span className="font-bold text-sm max-w-[100px] truncate hidden sm:inline">
               {profile?.displayName || 'Cyclist'}
             </span>
             <span className={`role-badge ${role}`}>{role}</span>
@@ -117,7 +155,7 @@ export const Navbar: React.FC<NavbarProps> = ({ activeTab, onSelectTab, onOpenAu
           <button
             type="button"
             onClick={onOpenAuth}
-            className="btn-primary text-sm py-2 px-4"
+            className="btn-primary text-sm py-2 px-4 whitespace-nowrap"
           >
             <i className="fas fa-sign-in-alt"></i> Sign In / Join
           </button>

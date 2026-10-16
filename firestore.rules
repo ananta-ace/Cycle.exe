@@ -39,7 +39,11 @@ service cloud.firestore {
       return isAdmin() || (
         isSignedIn() &&
         exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
-        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'MEMBER' &&
+        (
+          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'MEMBER' ||
+          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.isAdminMember == true ||
+          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.adminMembershipStatus == 'APPROVED'
+        ) &&
         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.isSuspended != true
       );
     }
@@ -68,7 +72,12 @@ service cloud.firestore {
           request.resource.data.id == resource.data.id &&
           request.resource.data.displayName is string &&
           request.resource.data.displayName.size() <= 80 &&
-          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['displayName', 'photoURL', 'bio', 'updatedAt'])
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['displayName', 'photoURL', 'bio', 'customTitle', 'welcomeSeenForRole', 'updatedAt'])
+        ) ||
+        (
+          // Allow rating updates to be aggregated
+          isSignedIn() &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['ratingAverage', 'ratingCount', 'updatedAt'])
         )
       );
 
@@ -78,6 +87,65 @@ service cloud.firestore {
       match /private/info {
         allow read, write: if isValidId(userId) && (isOwner(userId) || isSuperAdmin() || userId == 'oups31O1uCVp6XAOqLAmr0zr5aK2');
       }
+
+      // Member Ratings subcollection
+      match /ratings/{raterId} {
+        allow get, list: if isValidId(userId) && isValidId(raterId);
+        allow create, update: if isValidId(userId) && isValidId(raterId) &&
+          isSignedIn() &&
+          request.auth.uid == raterId &&
+          request.auth.uid != userId &&
+          request.resource.data.rating >= 1 &&
+          request.resource.data.rating <= 5;
+        allow delete: if isValidId(raterId) && (request.auth.uid == raterId || isSuperAdmin());
+      }
+    }
+
+    // Applications Collection (Admin Membership)
+    match /applications/{appId} {
+      allow get: if isValidId(appId) && isSignedIn() && (
+        resource.data.userId == request.auth.uid ||
+        isAdmin() ||
+        isSuperAdmin()
+      );
+
+      allow list: if isSignedIn();
+
+      allow create: if isValidId(appId) && isSignedIn() &&
+        request.resource.data.userId == request.auth.uid &&
+        request.resource.data.status == 'PENDING';
+
+      allow update: if isValidId(appId) && (
+        isSuperAdmin() ||
+        (
+          isAdmin() &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['adminRecommendations', 'updatedAt'])
+        )
+      );
+
+      allow delete: if isValidId(appId) && isSuperAdmin();
+    }
+
+    // Notifications Collection
+    match /notifications/{notifId} {
+      allow get, list: if isSignedIn();
+
+      allow create: if isSignedIn();
+
+      allow update: if isSignedIn() && (
+        resource.data.recipientId == request.auth.uid ||
+        resource.data.recipientId == 'SUPER_ADMIN' ||
+        resource.data.recipientId == 'ADMINS' ||
+        isSuperAdmin()
+      ) && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['isRead']);
+
+      allow delete: if isSuperAdmin() || (isSignedIn() && resource.data.recipientId == request.auth.uid);
+    }
+
+    // Gallery Collection (Super Admin Managed)
+    match /gallery/{photoId} {
+      allow get, list: if true;
+      allow create, update, delete: if isSuperAdmin();
     }
 
     // Posts Collection
@@ -145,10 +213,13 @@ service cloud.firestore {
             resource.data.authorId == request.auth.uid &&
             request.resource.data.authorId == resource.data.authorId &&
             request.resource.data.diff(resource.data).affectedKeys().hasOnly(['text', 'updatedAt'])
+          ) ||
+          (
+            isMember() &&
+            request.resource.data.diff(resource.data).affectedKeys().hasOnly(['replyCount', 'updatedAt'])
           )
         );
 
-        // ONLY Super Admin or comment author can delete! Regular admin CANNOT!
         allow delete: if isValidId(commentId) && (
           isSuperAdmin() ||
           (resource.data.authorId == request.auth.uid)
@@ -158,36 +229,33 @@ service cloud.firestore {
 
     // Reports Collection
     match /reports/{reportId} {
-      allow read: if isAdmin();
+      allow get: if isValidId(reportId) && (isAdmin() || (isSignedIn() && resource.data.reporterId == request.auth.uid));
+      allow list: if isAdmin();
+
       allow create: if isSignedIn() && isValidId(reportId) &&
-        request.resource.data.reporterId == request.auth.uid;
-      allow update: if isAdmin() && isValidId(reportId);
-      allow delete: if isSuperAdmin() && isValidId(reportId);
+        request.resource.data.reporterId == request.auth.uid &&
+        request.resource.data.status == 'PENDING';
+
+      allow update: if isValidId(reportId) && isAdmin() &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'moderatorNotes']);
+
+      allow delete: if isValidId(reportId) && isSuperAdmin();
     }
 
-    // Missions Collection (Super Admin exclusively creates, edits, publishes, deletes)
+    // Missions Collection (Super Admin Managed)
     match /missions/{missionId} {
-      allow get: if isValidId(missionId) && (resource.data.status == 'PUBLISHED' || isSuperAdmin());
-      allow list: if true;
-      allow create, update, delete: if isSuperAdmin() && isValidId(missionId);
+      allow get, list: if true;
+      allow create, update, delete: if isSuperAdmin();
     }
 
-    // Invitation Codes (Client direct access locked - Server / Super Admin only)
+    // Invitation Codes Collection (Super Admin Exclusive)
     match /invitationCodes/{codeId} {
-      allow read, write: if isSuperAdmin() && isValidId(codeId);
+      allow read, write: if isSuperAdmin();
     }
 
-    // Audit Logs (Super Admin read only)
+    // Audit Logs Collection (Super Admin Exclusive)
     match /auditLogs/{logId} {
-      allow read: if isSuperAdmin() && isValidId(logId);
-      allow create: if isSuperAdmin() && isValidId(logId);
-      allow update, delete: if false;
-    }
-
-    // System Stats
-    match /system/{docId} {
-      allow read: if isSuperAdmin();
-      allow write: if isSuperAdmin();
+      allow read, write: if isSuperAdmin();
     }
   }
 }

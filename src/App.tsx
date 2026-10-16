@@ -15,6 +15,9 @@ import { AdminDashboard } from './components/AdminDashboard';
 import { SuperAdminDashboard } from './components/SuperAdminDashboard';
 import { AuthModal } from './components/AuthModal';
 import { SuperAdminBootstrapBanner } from './components/SuperAdminBootstrapBanner';
+import { ApplicationModal } from './components/ApplicationModal';
+import { NotificationsDrawer } from './components/NotificationsDrawer';
+import { WelcomeMembershipModal } from './components/WelcomeMembershipModal';
 
 const MainContent: React.FC = () => {
   const { isSuperAdmin, isAdmin } = useAuth();
@@ -37,6 +40,32 @@ const MainContent: React.FC = () => {
   const [selectedMember, setSelectedMember] = useState<Member | null>(null);
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
   const [authModalOpen, setAuthModalOpen] = useState(false);
+  const [applyModalOpen, setApplyModalOpen] = useState(false);
+  const [notificationsDrawerOpen, setNotificationsDrawerOpen] = useState(false);
+
+  // Light / Dark Theme State
+  const [theme, setTheme] = useState<'light' | 'dark'>(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('cycle_theme');
+      if (saved === 'dark' || saved === 'light') return saved;
+    }
+    return 'light';
+  });
+
+  useEffect(() => {
+    if (theme === 'dark') {
+      document.documentElement.classList.add('dark');
+      document.body.classList.add('dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+      document.body.classList.remove('dark');
+    }
+    localStorage.setItem('cycle_theme', theme);
+  }, [theme]);
+
+  const handleToggleTheme = () => {
+    setTheme((prev) => (prev === 'light' ? 'dark' : 'light'));
+  };
 
   // Sync hash with activeTab
   const handleTabChange = (tab: TabType) => {
@@ -99,6 +128,9 @@ const MainContent: React.FC = () => {
         activeTab={activeTab}
         onSelectTab={handleTabChange}
         onOpenAuth={() => setAuthModalOpen(true)}
+        onOpenNotifications={() => setNotificationsDrawerOpen(true)}
+        theme={theme}
+        onToggleTheme={handleToggleTheme}
       />
 
       {/* Super Admin bootstrap banner if owner email detected */}
@@ -106,7 +138,10 @@ const MainContent: React.FC = () => {
 
       <main>
         {activeTab === 'members' && (
-          <MembersView onSelectMember={(member) => setSelectedMember(member)} />
+          <MembersView
+            onSelectMember={(member) => setSelectedMember(member)}
+            onOpenApplyModal={() => setApplyModalOpen(true)}
+          />
         )}
         {activeTab === 'community' && <CommunityFeed />}
         {activeTab === 'missions' && <MissionsView />}
@@ -137,6 +172,20 @@ const MainContent: React.FC = () => {
         isOpen={authModalOpen}
         onClose={() => setAuthModalOpen(false)}
       />
+
+      <ApplicationModal
+        isOpen={applyModalOpen}
+        onClose={() => setApplyModalOpen(false)}
+        onOpenAuth={() => setAuthModalOpen(true)}
+      />
+
+      <NotificationsDrawer
+        isOpen={notificationsDrawerOpen}
+        onClose={() => setNotificationsDrawerOpen(false)}
+        onNavigateTab={handleTabChange}
+      />
+
+      <WelcomeMembershipModal />
     </div>
   );
 };

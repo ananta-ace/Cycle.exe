@@ -5,11 +5,12 @@ import {
   query,
   orderBy,
   updateDoc,
+  addDoc,
   doc,
 } from 'firebase/firestore';
 import { db } from '../firebase';
 import { useAuth, DESIGNATED_SUPER_ADMIN_EMAIL } from '../context/AuthContext';
-import { UserProfile, InvitationCodeSummary, SuperAdminStats } from '../types';
+import { UserProfile, InvitationCodeSummary, SuperAdminStats, AdminMembershipApplication } from '../types';
 
 export const SuperAdminDashboard: React.FC = () => {
   const { user, isSuperAdmin, role } = useAuth();
@@ -18,6 +19,15 @@ export const SuperAdminDashboard: React.FC = () => {
   const [allUsers, setAllUsers] = useState<UserProfile[]>([]);
   const [userSearch, setUserSearch] = useState('');
   const [loadingUsers, setLoadingUsers] = useState(true);
+
+  // Applications
+  const [applications, setApplications] = useState<AdminMembershipApplication[]>([]);
+  const [loadingApps, setLoadingApps] = useState(true);
+  const [appFilter, setAppFilter] = useState<'ALL' | 'PENDING' | 'APPROVED' | 'REJECTED' | 'SUSPENDED'>('ALL');
+
+  // Title editor
+  const [editingTitleUser, setEditingTitleUser] = useState<UserProfile | null>(null);
+  const [newTitleValue, setNewTitleValue] = useState('');
 
   // Server stats & analytics
   const [stats, setStats] = useState<SuperAdminStats | null>(null);
@@ -31,7 +41,7 @@ export const SuperAdminDashboard: React.FC = () => {
   const [customSlotLimit, setCustomSlotLimit] = useState('5');
 
   // Active sub-tab in Super Admin view
-  const [adminTab, setAdminTab] = useState<'analytics' | 'users' | 'invitations' | 'audit'>('analytics');
+  const [adminTab, setAdminTab] = useState<'applications' | 'users' | 'analytics' | 'invitations' | 'audit'>('applications');
 
   // 1. Fetch real users from Firestore
   useEffect(() => {
@@ -51,8 +61,225 @@ export const SuperAdminDashboard: React.FC = () => {
       }
     );
 
-    return () => unsub();
+    // Listen to membership applications
+    const appsQuery = query(collection(db, 'applications'), orderBy('createdAt', 'desc'));
+    const unsubApps = onSnapshot(
+      appsQuery,
+      (snap) => {
+        const list: AdminMembershipApplication[] = [];
+        snap.forEach((d) => list.push({ id: d.id, ...(d.data() as Omit<AdminMembershipApplication, 'id'>) }));
+        setApplications(list);
+        setLoadingApps(false);
+      },
+      (err) => {
+        console.error('Error fetching applications:', err);
+        setLoadingApps(false);
+      }
+    );
+
+    return () => {
+      unsub();
+      unsubApps();
+    };
   }, [isSuperAdmin]);
+
+  // Approve Admin Membership Application
+  const handleApproveApp = async (app: AdminMembershipApplication) => {
+    if (!user || !isSuperAdmin) return;
+    try {
+      const now = new Date().toISOString();
+      await updateDoc(doc(db, 'applications', app.id), {
+        status: 'APPROVED',
+        reviewedBy: user.uid,
+        reviewedAt: now,
+        updatedAt: now,
+      });
+
+      await updateDoc(doc(db, 'users', app.userId), {
+        isAdminMember: true,
+        role: 'ADMIN',
+        adminMembershipStatus: 'APPROVED',
+        customTitle: app.requestedTitle || 'Admin Member',
+        isSuspended: false,
+        updatedAt: now,
+      });
+
+      // Send congratulations notification
+      await addDoc(collection(db, 'notifications'), {
+        recipientId: app.userId,
+        type: 'APPLICATION_APPROVED',
+        title: 'Admin Membership Approved! 🚴',
+        message:
+          'Congratulations! Your Admin Membership application was approved by the Super Admin. You are now an official Cycle.exe Admin Member.',
+        isRead: false,
+        createdAt: now,
+      });
+
+      alert(`Approved ${app.applicantName} as an Admin Member!`);
+    } catch (err: unknown) {
+      console.error('Error approving application:', err);
+      alert(err instanceof Error ? err.message : 'Failed to approve application');
+    }
+  };
+
+  // Reject Application
+  const handleRejectApp = async (app: AdminMembershipApplication) => {
+    if (!user || !isSuperAdmin) return;
+    const reason = prompt('Please enter a rejection reason (optional):') || 'Requirements not met at this time.';
+
+    try {
+      const now = new Date().toISOString();
+      await updateDoc(doc(db, 'applications', app.id), {
+        status: 'REJECTED',
+        rejectionReason: reason,
+        reviewedBy: user.uid,
+        reviewedAt: now,
+        updatedAt: now,
+      });
+
+      await updateDoc(doc(db, 'users', app.userId), {
+        adminMembershipStatus: 'REJECTED',
+        updatedAt: now,
+      });
+
+      await addDoc(collection(db, 'notifications'), {
+        recipientId: app.userId,
+        type: 'APPLICATION_REJECTED',
+        title: 'Application Status Update',
+        message: `Your application for Admin Membership was not approved. Note: "${reason}"`,
+        isRead: false,
+        createdAt: now,
+      });
+
+      alert(`Application for ${app.applicantName} marked as rejected.`);
+    } catch (err: unknown) {
+      console.error('Error rejecting application:', err);
+      alert(err instanceof Error ? err.message : 'Failed to reject application');
+    }
+  };
+
+  // Suspend Admin Member
+  const handleSuspendAdminMember = async (targetUserId: string, name: string) => {
+    if (!user || !isSuperAdmin) return;
+    if (!confirm(`Are you sure you want to suspend Admin Member privileges for ${name}?`)) return;
+
+    try {
+      const now = new Date().toISOString();
+      await updateDoc(doc(db, 'users', targetUserId), {
+        isAdminMember: false,
+        adminMembershipStatus: 'SUSPENDED',
+        isSuspended: true,
+        updatedAt: now,
+      });
+
+      try {
+        await updateDoc(doc(db, 'applications', targetUserId), {
+          status: 'SUSPENDED',
+          updatedAt: now,
+        });
+      } catch {
+        // App record might not exist if manually promoted
+      }
+
+      await addDoc(collection(db, 'notifications'), {
+        recipientId: targetUserId,
+        type: 'STATUS_CHANGED',
+        title: 'Admin Membership Suspended',
+        message:
+          'Your Admin Member privileges have been suspended by the Super Admin. You retain ordinary account access.',
+        isRead: false,
+        createdAt: now,
+      });
+
+      alert(`Suspended Admin Member privileges for ${name}.`);
+    } catch (err: unknown) {
+      console.error('Error suspending member:', err);
+      alert(err instanceof Error ? err.message : 'Failed to suspend member');
+    }
+  };
+
+  // Reinstate Admin Member
+  const handleReinstateAdminMember = async (targetUserId: string, name: string) => {
+    if (!user || !isSuperAdmin) return;
+    try {
+      const now = new Date().toISOString();
+      await updateDoc(doc(db, 'users', targetUserId), {
+        isAdminMember: true,
+        adminMembershipStatus: 'APPROVED',
+        isSuspended: false,
+        updatedAt: now,
+      });
+
+      try {
+        await updateDoc(doc(db, 'applications', targetUserId), {
+          status: 'APPROVED',
+          updatedAt: now,
+        });
+      } catch {
+        // App record might not exist
+      }
+
+      await addDoc(collection(db, 'notifications'), {
+        recipientId: targetUserId,
+        type: 'STATUS_CHANGED',
+        title: 'Admin Membership Reinstated',
+        message: 'Your Admin Member privileges have been reinstated by the Super Admin. Welcome back!',
+        isRead: false,
+        createdAt: now,
+      });
+
+      alert(`Reinstated Admin Member ${name}.`);
+    } catch (err: unknown) {
+      console.error('Error reinstating member:', err);
+      alert(err instanceof Error ? err.message : 'Failed to reinstate member');
+    }
+  };
+
+  // Remove someone from the Admin Member panel without deleting their account
+  const handleRemoveFromAdminPanel = async (targetUserId: string, name: string) => {
+    if (!user || !isSuperAdmin) return;
+    if (!confirm(`Are you sure you want to remove ${name} from the Admin Member directory? Their regular account and personal data will be preserved.`)) return;
+
+    try {
+      const now = new Date().toISOString();
+      await updateDoc(doc(db, 'users', targetUserId), {
+        isAdminMember: false,
+        adminMembershipStatus: 'NONE',
+        role: 'PUBLIC',
+        updatedAt: now,
+      });
+
+      try {
+        await updateDoc(doc(db, 'applications', targetUserId), {
+          status: 'REJECTED',
+          updatedAt: now,
+        });
+      } catch {
+        // Fallback
+      }
+
+      alert(`Removed ${name} from Admin Member directory.`);
+    } catch (err: unknown) {
+      console.error('Error removing from panel:', err);
+      alert(err instanceof Error ? err.message : 'Failed to remove from panel');
+    }
+  };
+
+  // Save edited custom title
+  const handleSaveCustomTitle = async () => {
+    if (!editingTitleUser || !newTitleValue.trim()) return;
+    try {
+      await updateDoc(doc(db, 'users', editingTitleUser.id), {
+        customTitle: newTitleValue.trim(),
+        updatedAt: new Date().toISOString(),
+      });
+      setEditingTitleUser(null);
+      alert('Custom community title updated!');
+    } catch (err: unknown) {
+      console.error('Error updating title:', err);
+      alert('Failed to update title');
+    }
+  };
 
   // 2. Fetch server-side Super Admin stats
   const fetchStats = async () => {
@@ -312,15 +539,21 @@ export const SuperAdminDashboard: React.FC = () => {
             </div>
           </div>
 
-          <div className="flex gap-2 bg-white p-1 rounded-full border-2 border-zinc-900 shadow-[0_3px_0_#d6d2ca]">
+          <div className="flex flex-wrap gap-2 bg-white p-1 rounded-full border-2 border-zinc-900 shadow-[0_3px_0_#d6d2ca]">
             <button
               type="button"
-              onClick={() => setAdminTab('analytics')}
-              className={`text-xs font-bold py-1.5 px-3.5 rounded-full transition ${
-                adminTab === 'analytics' ? 'bg-[#1e1e1e] text-[#f9c74f]' : 'text-zinc-700 hover:bg-zinc-100'
+              onClick={() => setAdminTab('applications')}
+              className={`text-xs font-bold py-1.5 px-3.5 rounded-full transition flex items-center gap-1.5 ${
+                adminTab === 'applications' ? 'bg-[#1e1e1e] text-[#f9c74f]' : 'text-zinc-700 hover:bg-zinc-100'
               }`}
             >
-              <i className="fas fa-chart-line mr-1"></i> Analytics
+              <i className="fas fa-id-card"></i>
+              <span>Applications</span>
+              {applications.filter((a) => a.status === 'PENDING').length > 0 && (
+                <span className="w-5 h-5 rounded-full bg-amber-500 text-black text-[10px] font-black flex items-center justify-center">
+                  {applications.filter((a) => a.status === 'PENDING').length}
+                </span>
+              )}
             </button>
             <button
               type="button"
@@ -330,6 +563,15 @@ export const SuperAdminDashboard: React.FC = () => {
               }`}
             >
               <i className="fas fa-users-cog mr-1"></i> Users ({totalUsers})
+            </button>
+            <button
+              type="button"
+              onClick={() => setAdminTab('analytics')}
+              className={`text-xs font-bold py-1.5 px-3.5 rounded-full transition ${
+                adminTab === 'analytics' ? 'bg-[#1e1e1e] text-[#f9c74f]' : 'text-zinc-700 hover:bg-zinc-100'
+              }`}
+            >
+              <i className="fas fa-chart-line mr-1"></i> Analytics
             </button>
             <button
               type="button"
@@ -347,11 +589,228 @@ export const SuperAdminDashboard: React.FC = () => {
                 adminTab === 'audit' ? 'bg-[#1e1e1e] text-[#f9c74f]' : 'text-zinc-700 hover:bg-zinc-100'
               }`}
             >
-              <i className="fas fa-history mr-1"></i> Security Logs
+              <i className="fas fa-history mr-1"></i> Logs
             </button>
           </div>
         </div>
       </div>
+
+      {/* TAB 0: ADMIN MEMBERSHIP APPLICATIONS */}
+      {adminTab === 'applications' && (
+        <div className="space-y-6">
+          <div className="neo-card">
+            <div className="flex items-center justify-between flex-wrap gap-4 mb-4">
+              <div>
+                <h2 className="text-xl font-bold flex items-center gap-2">
+                  <i className="fas fa-id-card text-amber-600"></i> Admin Membership Applications
+                </h2>
+                <p className="text-xs text-zinc-600">
+                  Review applicant motivation, cycling experience, and make final approval or suspension decisions.
+                </p>
+              </div>
+
+              <div className="flex gap-1.5 flex-wrap">
+                {(['ALL', 'PENDING', 'APPROVED', 'REJECTED', 'SUSPENDED'] as const).map((filter) => (
+                  <button
+                    key={filter}
+                    type="button"
+                    onClick={() => setAppFilter(filter)}
+                    className={`text-xs font-bold py-1 px-3 rounded-full border border-zinc-900 transition ${
+                      appFilter === filter
+                        ? 'bg-zinc-900 text-white'
+                        : 'bg-white text-zinc-700 hover:bg-zinc-100'
+                    }`}
+                  >
+                    {filter}
+                    {filter === 'PENDING' && (
+                      <span className="ml-1 px-1.5 py-0.2 rounded-full bg-amber-500 text-black text-[10px]">
+                        {applications.filter((a) => a.status === 'PENDING').length}
+                      </span>
+                    )}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {loadingApps ? (
+              <div className="py-8 text-center text-xs font-bold text-zinc-500">
+                <i className="fas fa-spinner fa-spin mr-2"></i> Loading applications...
+              </div>
+            ) : applications.length === 0 ? (
+              <div className="py-12 text-center text-zinc-400">
+                <i className="fas fa-inbox text-3xl mb-2 block opacity-40"></i>
+                <p className="font-bold text-sm text-zinc-600">No applications found</p>
+                <p className="text-xs text-zinc-400">
+                  Applications submitted by registered riders will appear here in real time.
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {applications
+                  .filter((a) => (appFilter === 'ALL' ? true : a.status === appFilter))
+                  .map((app) => (
+                    <div
+                      key={app.id}
+                      className="p-4 bg-zinc-50 border-2 border-zinc-900 rounded-2xl shadow-[0_3px_0_#d6d2ca]"
+                    >
+                      <div className="flex items-start justify-between flex-wrap gap-3 mb-3">
+                        <div className="flex items-center gap-3">
+                          <div className="w-12 h-12 rounded-full bg-zinc-200 border-2 border-zinc-900 overflow-hidden flex items-center justify-center font-bold text-sm shrink-0">
+                            {app.applicantPhotoURL ? (
+                              <img
+                                src={app.applicantPhotoURL}
+                                alt=""
+                                className="w-full h-full object-cover"
+                              />
+                            ) : (
+                              app.applicantName.charAt(0).toUpperCase()
+                            )}
+                          </div>
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <h3 className="font-black text-base text-zinc-900">
+                                {app.applicantName}
+                              </h3>
+                              <span
+                                className={`text-[10px] font-black uppercase px-2 py-0.5 rounded-full border ${
+                                  app.status === 'PENDING'
+                                    ? 'bg-amber-100 text-amber-900 border-amber-400'
+                                    : app.status === 'APPROVED'
+                                    ? 'bg-emerald-100 text-emerald-900 border-emerald-400'
+                                    : app.status === 'REJECTED'
+                                    ? 'bg-rose-100 text-rose-900 border-rose-400'
+                                    : 'bg-zinc-200 text-zinc-800 border-zinc-400'
+                                }`}
+                              >
+                                {app.status}
+                              </span>
+                            </div>
+                            <p className="text-xs text-zinc-500 font-mono">{app.applicantEmail}</p>
+                            <span className="text-[10px] text-zinc-400">
+                              Applied: {new Date(app.createdAt).toLocaleString()}
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* Requested title badge */}
+                        {app.requestedTitle && (
+                          <div className="text-right">
+                            <span className="text-[10px] font-bold text-zinc-500 block uppercase">
+                              Requested Title
+                            </span>
+                            <span className="text-xs font-black text-amber-900 bg-[#f9c74f]/40 px-2.5 py-1 rounded-full border border-[#f9c74f]">
+                              {app.requestedTitle}
+                            </span>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Application text details */}
+                      <div className="space-y-2 mb-4 bg-white p-3 rounded-xl border border-zinc-200 text-xs">
+                        <div>
+                          <span className="font-bold text-zinc-700 block mb-0.5">
+                            Motivation &amp; Community Reason:
+                          </span>
+                          <p className="text-zinc-800 leading-relaxed italic">{app.reason}</p>
+                        </div>
+                        <div className="pt-2 border-t border-zinc-100">
+                          <span className="font-bold text-zinc-700 block mb-0.5">
+                            Cycling Background &amp; Experience:
+                          </span>
+                          <p className="text-zinc-800 leading-relaxed">{app.cyclingExperience}</p>
+                        </div>
+                        {app.rejectionReason && (
+                          <div className="pt-2 border-t border-red-100 text-red-700">
+                            <span className="font-bold block">Rejection Note:</span>
+                            <p className="italic">{app.rejectionReason}</p>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Moderator Recommendations (if any) */}
+                      {app.adminRecommendations && app.adminRecommendations.length > 0 && (
+                        <div className="mb-3 p-2.5 bg-blue-50 border border-blue-200 rounded-xl text-xs">
+                          <span className="font-bold text-blue-900 block mb-1">
+                            <i className="fas fa-shield-alt mr-1"></i> Moderator Team Feedback:
+                          </span>
+                          <div className="space-y-1">
+                            {app.adminRecommendations.map((rec, i) => (
+                              <div key={i} className="flex items-center justify-between text-[11px]">
+                                <span>
+                                  <strong>{rec.adminName}:</strong> {rec.comment}
+                                </span>
+                                <span
+                                  className={`font-bold px-1.5 py-0.5 rounded text-[10px] ${
+                                    rec.recommendation === 'APPROVE'
+                                      ? 'bg-emerald-100 text-emerald-800'
+                                      : 'bg-rose-100 text-rose-800'
+                                  }`}
+                                >
+                                  {rec.recommendation}
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Action buttons (Exclusive to Super Admin) */}
+                      <div className="flex items-center justify-end flex-wrap gap-2 pt-2 border-t border-zinc-200">
+                        {app.status === 'PENDING' && (
+                          <>
+                            <button
+                              type="button"
+                              onClick={() => handleRejectApp(app)}
+                              className="px-3 py-1.5 rounded-xl border border-rose-300 bg-rose-50 hover:bg-rose-100 text-rose-800 text-xs font-bold transition"
+                            >
+                              <i className="fas fa-times mr-1"></i> Reject
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleApproveApp(app)}
+                              className="btn-primary py-1.5 px-4 text-xs font-black flex items-center gap-1.5"
+                            >
+                              <i className="fas fa-check"></i> Approve as Admin Member
+                            </button>
+                          </>
+                        )}
+
+                        {app.status === 'APPROVED' && (
+                          <>
+                            <button
+                              type="button"
+                              onClick={() => handleRemoveFromAdminPanel(app.userId, app.applicantName)}
+                              className="px-3 py-1.5 rounded-xl border border-zinc-300 bg-zinc-100 hover:bg-zinc-200 text-zinc-700 text-xs font-bold transition"
+                            >
+                              Remove from Admin Directory
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleSuspendAdminMember(app.userId, app.applicantName)}
+                              className="px-3 py-1.5 rounded-xl border border-red-300 bg-red-50 hover:bg-red-100 text-red-800 text-xs font-bold transition"
+                            >
+                              <i className="fas fa-user-slash mr-1"></i> Suspend Member
+                            </button>
+                          </>
+                        )}
+
+                        {app.status === 'SUSPENDED' && (
+                          <button
+                            type="button"
+                            onClick={() => handleReinstateAdminMember(app.userId, app.applicantName)}
+                            className="btn-primary py-1.5 px-4 text-xs font-black flex items-center gap-1.5"
+                          >
+                            <i className="fas fa-user-check"></i> Reinstate Admin Member
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* TAB 1: REAL-TIME PRIVATE ANALYTICS */}
       {adminTab === 'analytics' && (
@@ -478,15 +937,16 @@ export const SuperAdminDashboard: React.FC = () => {
                   <th>Rider</th>
                   <th>Email</th>
                   <th>Current Role</th>
+                  <th>Community Title</th>
                   <th>Status</th>
                   <th>Joined</th>
-                  <th>Role Actions</th>
+                  <th>Actions</th>
                 </tr>
               </thead>
               <tbody>
                 {loadingUsers ? (
                   <tr>
-                    <td colSpan={6} className="text-center py-6 text-zinc-500 font-bold">
+                    <td colSpan={7} className="text-center py-6 text-zinc-500 font-bold">
                       <i className="fas fa-spinner fa-spin mr-2"></i> Loading registered users...
                     </td>
                   </tr>
@@ -509,7 +969,32 @@ export const SuperAdminDashboard: React.FC = () => {
                       </td>
                       <td className="text-xs text-zinc-600">{u.email}</td>
                       <td>
-                        <span className={`role-badge ${u.role}`}>{u.role}</span>
+                        <div className="flex items-center gap-1">
+                          <span className={`role-badge ${u.role}`}>{u.role}</span>
+                          {u.isAdminMember && (
+                            <span className="text-[10px] bg-amber-100 text-amber-900 font-black px-1.5 py-0.5 rounded border border-amber-300">
+                              Admin Member
+                            </span>
+                          )}
+                        </div>
+                      </td>
+                      <td>
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-xs font-bold text-zinc-800">
+                            {u.customTitle || (isOwner ? 'Executive Owner' : '—')}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setEditingTitleUser(u);
+                              setNewTitleValue(u.customTitle || '');
+                            }}
+                            className="text-[11px] text-zinc-400 hover:text-black p-1"
+                            title="Edit / Moderate custom title"
+                          >
+                            <i className="fas fa-pencil-alt"></i>
+                          </button>
+                        </div>
                       </td>
                       <td>
                         {u.isSuspended ? (
@@ -773,6 +1258,74 @@ export const SuperAdminDashboard: React.FC = () => {
                 )}
               </tbody>
             </table>
+          </div>
+        </div>
+      )}
+
+      {/* Super Admin Title Editor Modal */}
+      {editingTitleUser && (
+        <div className="modal-overlay open" role="dialog" aria-modal="true">
+          <div className="modal max-w-md p-6 border-3 border-[#1e1e1e] bg-white rounded-3xl shadow-[0_10px_0_#1e1e1e]">
+            <button
+              type="button"
+              className="modal-close"
+              onClick={() => setEditingTitleUser(null)}
+              aria-label="Close"
+            >
+              <i className="fas fa-times"></i>
+            </button>
+
+            <h3 className="font-black text-lg text-zinc-900 mb-1">
+              Edit Custom Community Title
+            </h3>
+            <p className="text-xs text-zinc-600 mb-4">
+              Moderate or customize community title for <strong>{editingTitleUser.displayName}</strong>.
+            </p>
+
+            <div className="space-y-3">
+              <div>
+                <label className="block text-xs font-black uppercase tracking-wider mb-1 text-zinc-700">
+                  Custom Title
+                </label>
+                <input
+                  type="text"
+                  value={newTitleValue}
+                  onChange={(e) => setNewTitleValue(e.target.value)}
+                  placeholder="e.g. Chill Guy, Road Warrior, Dhesh Dhesh..."
+                  className="neo-input text-sm w-full p-2.5 font-bold"
+                />
+              </div>
+
+              <div className="flex flex-wrap gap-1.5 pt-1">
+                {['Chill Guy', 'Road Warrior', 'Dhesh Dhesh', 'Cycling Enthusiast', 'Lover', 'Climb Specialist'].map((t) => (
+                  <button
+                    key={t}
+                    type="button"
+                    onClick={() => setNewTitleValue(t)}
+                    className="text-[11px] px-2.5 py-1 rounded-full bg-zinc-100 hover:bg-[#f9c74f] font-bold text-zinc-800 border border-zinc-300 transition"
+                  >
+                    {t}
+                  </button>
+                ))}
+              </div>
+
+              <div className="flex justify-end gap-2 pt-3 border-t border-zinc-200">
+                <button
+                  type="button"
+                  onClick={() => setEditingTitleUser(null)}
+                  className="btn-secondary py-2 px-4 text-xs font-bold"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSaveCustomTitle}
+                  className="btn-primary py-2 px-5 text-xs font-black"
+                >
+                  Save Title
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}

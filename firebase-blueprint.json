@@ -2,7 +2,7 @@
   "entities": {
     "UserPublic": {
       "title": "UserPublic",
-      "description": "Publicly accessible user profile details",
+      "description": "Publicly accessible user profile details with admin membership info and custom titles",
       "type": "object",
       "properties": {
         "id": { "type": "string", "maxLength": 128 },
@@ -10,7 +10,14 @@
         "photoURL": { "type": "string", "maxLength": 500 },
         "bio": { "type": "string", "maxLength": 500 },
         "role": { "type": "string", "enum": ["PUBLIC", "MEMBER", "ADMIN", "SUPER_ADMIN"] },
+        "customTitle": { "type": "string", "maxLength": 80 },
+        "adminMembershipStatus": { "type": "string", "enum": ["NONE", "PENDING", "APPROVED", "REJECTED", "SUSPENDED"] },
+        "isAdminMember": { "type": "boolean" },
         "isSuspended": { "type": "boolean" },
+        "isAccountSuspended": { "type": "boolean" },
+        "welcomeSeenForRole": { "type": "string", "maxLength": 50 },
+        "ratingAverage": { "type": "number" },
+        "ratingCount": { "type": "number" },
         "createdAt": { "type": "string", "format": "date-time" },
         "updatedAt": { "type": "string", "format": "date-time" }
       },
@@ -28,6 +35,75 @@
       },
       "required": ["email", "emailVerified"]
     },
+    "Application": {
+      "title": "Application",
+      "description": "Admin Membership application submitted by registered riders",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "userId": { "type": "string", "maxLength": 128 },
+        "applicantName": { "type": "string", "maxLength": 80 },
+        "applicantEmail": { "type": "string", "maxLength": 128 },
+        "applicantPhotoURL": { "type": "string", "maxLength": 500 },
+        "reason": { "type": "string", "maxLength": 1500 },
+        "cyclingExperience": { "type": "string", "maxLength": 1500 },
+        "requestedTitle": { "type": "string", "maxLength": 80 },
+        "status": { "type": "string", "enum": ["PENDING", "APPROVED", "REJECTED", "SUSPENDED"] },
+        "rejectionReason": { "type": "string", "maxLength": 500 },
+        "reviewedBy": { "type": "string", "maxLength": 128 },
+        "reviewedAt": { "type": "string", "format": "date-time" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "userId", "applicantName", "applicantEmail", "reason", "status", "createdAt"]
+    },
+    "MemberRating": {
+      "title": "MemberRating",
+      "description": "1 to 5 star rating given to an approved Admin Member by registered riders",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "targetMemberId": { "type": "string", "maxLength": 128 },
+        "raterId": { "type": "string", "maxLength": 128 },
+        "raterName": { "type": "string", "maxLength": 80 },
+        "rating": { "type": "number" },
+        "comment": { "type": "string", "maxLength": 500 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "targetMemberId", "raterId", "rating", "createdAt"]
+    },
+    "GalleryPhoto": {
+      "title": "GalleryPhoto",
+      "description": "Official cycling photo uploaded and managed exclusively by Super Admin",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "title": { "type": "string", "maxLength": 120 },
+        "description": { "type": "string", "maxLength": 1000 },
+        "photoURL": { "type": "string", "maxLength": 500 },
+        "uploadedBy": { "type": "string", "maxLength": 128 },
+        "uploadedByName": { "type": "string", "maxLength": 80 },
+        "uploadedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "title", "photoURL", "uploadedBy", "uploadedAt"]
+    },
+    "Notification": {
+      "title": "Notification",
+      "description": "In-app notifications for users, admins, and Super Admin",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "recipientId": { "type": "string", "maxLength": 128 },
+        "type": { "type": "string", "enum": ["APPLICATION_SUBMITTED", "APPLICATION_APPROVED", "APPLICATION_REJECTED", "STATUS_CHANGED", "NEW_RATING", "SYSTEM"] },
+        "title": { "type": "string", "maxLength": 120 },
+        "message": { "type": "string", "maxLength": 500 },
+        "link": { "type": "string", "maxLength": 200 },
+        "isRead": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "recipientId", "type", "title", "message", "isRead", "createdAt"]
+    },
     "Post": {
       "title": "Post",
       "description": "Community post created by an authorized rider",
@@ -37,6 +113,7 @@
         "authorId": { "type": "string", "maxLength": 128 },
         "authorName": { "type": "string", "maxLength": 80 },
         "authorPhotoURL": { "type": "string", "maxLength": 500 },
+        "authorTitle": { "type": "string", "maxLength": 80 },
         "content": { "type": "string", "maxLength": 2000 },
         "photoURLs": { "type": "array" },
         "likesCount": { "type": "number" },
@@ -60,15 +137,18 @@
     },
     "Comment": {
       "title": "Comment",
-      "description": "Discussion comment on a post",
+      "description": "Threaded comments and nested replies on a post",
       "type": "object",
       "properties": {
         "id": { "type": "string", "maxLength": 128 },
         "postId": { "type": "string", "maxLength": 128 },
+        "parentId": { "type": "string", "maxLength": 128 },
+        "replyToAuthor": { "type": "string", "maxLength": 80 },
         "authorId": { "type": "string", "maxLength": 128 },
         "authorName": { "type": "string", "maxLength": 80 },
         "authorPhotoURL": { "type": "string", "maxLength": 500 },
         "text": { "type": "string", "maxLength": 1000 },
+        "replyCount": { "type": "number" },
         "isReported": { "type": "boolean" },
         "isDeleted": { "type": "boolean" },
         "deletedReason": { "type": "string", "maxLength": 200 },
@@ -107,17 +187,19 @@
         "coverPhoto": { "type": "string", "maxLength": 500 },
         "startDate": { "type": "string", "format": "date-time" },
         "endDate": { "type": "string", "format": "date-time" },
+        "location": { "type": "string", "maxLength": 200 },
+        "instructions": { "type": "string", "maxLength": 2000 },
         "distanceTargetKm": { "type": "number" },
         "durationTargetHours": { "type": "number" },
         "difficulty": { "type": "string", "enum": ["EASY", "MEDIUM", "HARD", "EXTREME"] },
         "rules": { "type": "string", "maxLength": 2000 },
-        "status": { "type": "string", "enum": ["DRAFT", "PUBLISHED", "ARCHIVED"] },
+        "status": { "type": "string", "enum": ["COMING_SOON", "UPCOMING", "ONGOING", "ENDED", "CANCELLED", "DRAFT"] },
         "rewardDescription": { "type": "string", "maxLength": 300 },
         "createdBy": { "type": "string", "maxLength": 128 },
         "createdAt": { "type": "string", "format": "date-time" },
         "updatedAt": { "type": "string", "format": "date-time" }
       },
-      "required": ["id", "title", "description", "distanceTargetKm", "difficulty", "status", "createdAt"]
+      "required": ["id", "title", "description", "status", "createdAt"]
     },
     "InvitationCode": {
       "title": "InvitationCode",
@@ -163,6 +245,22 @@
       "schema": { "$ref": "#/entities/UserPrivate" },
       "description": "Private sensitive authentication and login info"
     },
+    "/users/{userId}/ratings/{raterId}": {
+      "schema": { "$ref": "#/entities/MemberRating" },
+      "description": "Public community ratings for approved Admin Members"
+    },
+    "/applications/{applicationId}": {
+      "schema": { "$ref": "#/entities/Application" },
+      "description": "Applications submitted by users to become Admin Members"
+    },
+    "/gallery/{photoId}": {
+      "schema": { "$ref": "#/entities/GalleryPhoto" },
+      "description": "Official cycling photo gallery managed by Super Admin"
+    },
+    "/notifications/{notificationId}": {
+      "schema": { "$ref": "#/entities/Notification" },
+      "description": "System and administrative in-app notifications"
+    },
     "/posts/{postId}": {
       "schema": { "$ref": "#/entities/Post" },
       "description": "Community cycling feed posts"
@@ -173,7 +271,7 @@
     },
     "/posts/{postId}/comments/{commentId}": {
       "schema": { "$ref": "#/entities/Comment" },
-      "description": "Threaded comments on a community post"
+      "description": "Threaded comments and nested replies on a community post"
     },
     "/reports/{reportId}": {
       "schema": { "$ref": "#/entities/CommentReport" },

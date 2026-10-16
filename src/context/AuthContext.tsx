@@ -16,6 +16,7 @@ import {
   setDoc,
   updateDoc,
   onSnapshot,
+  collection,
 } from 'firebase/firestore';
 import { auth, db } from '../firebase';
 import { UserRole, UserProfile } from '../types';
@@ -31,13 +32,15 @@ interface AuthContextType {
   isMember: boolean;
   isSuspended: boolean;
   loading: boolean;
+  unreadNotificationsCount: number;
   signInWithGoogle: () => Promise<void>;
   registerWithEmail: (email: string, pass: string, name: string) => Promise<void>;
   loginWithEmail: (email: string, pass: string) => Promise<void>;
   signOutUser: () => Promise<void>;
   bootstrapSuperAdmin: () => Promise<{ success: boolean; message: string }>;
   redeemInvitation: (code: string) => Promise<{ success: boolean; message: string }>;
-  updateProfileDetails: (name: string, bio: string, photoURL?: string) => Promise<void>;
+  updateProfileDetails: (name: string, bio: string, photoURL?: string, customTitle?: string) => Promise<void>;
+  dismissWelcomeModal: (roleToken: string) => Promise<void>;
   resendVerificationEmail: () => Promise<void>;
 }
 
@@ -47,6 +50,46 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const [user, setUser] = useState<User | null>(null);
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
+  const [unreadNotificationsCount, setUnreadNotificationsCount] = useState(0);
+
+  // Listen for unread notifications
+  useEffect(() => {
+    if (!user) {
+      setUnreadNotificationsCount(0);
+      return;
+    }
+
+    const notifsRef = collection(db, 'notifications');
+    const unsub = onSnapshot(
+      notifsRef,
+      (snapshot) => {
+        let count = 0;
+        const isSuper =
+          profile?.role === 'SUPER_ADMIN' ||
+          user.email?.toLowerCase() === DESIGNATED_SUPER_ADMIN_EMAIL.toLowerCase();
+        const isAdm = profile?.role === 'ADMIN' || isSuper;
+
+        snapshot.forEach((docSnap) => {
+          const data = docSnap.data();
+          if (!data.isRead) {
+            if (data.recipientId === user.uid) {
+              count++;
+            } else if (isSuper && (data.recipientId === 'SUPER_ADMIN' || data.recipientId === 'ALL_ADMINS')) {
+              count++;
+            } else if (isAdm && data.recipientId === 'ALL_ADMINS') {
+              count++;
+            }
+          }
+        });
+        setUnreadNotificationsCount(count);
+      },
+      (err) => {
+        console.warn('Notifications count listener warning:', err);
+      }
+    );
+
+    return () => unsub();
+  }, [user, profile]);
 
   // Initialize and observe auth state
   useEffect(() => {
@@ -220,7 +263,12 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     return { success: true, message: data.message };
   };
 
-  const updateProfileDetails = async (displayName: string, bio: string, photoURL?: string) => {
+  const updateProfileDetails = async (
+    displayName: string,
+    bio: string,
+    photoURL?: string,
+    customTitle?: string
+  ) => {
     if (!user) return;
     const updates: Partial<UserProfile> = {
       displayName: displayName.trim(),
@@ -228,17 +276,41 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       updatedAt: new Date().toISOString(),
     };
     if (photoURL !== undefined) updates.photoURL = photoURL;
+    if (customTitle !== undefined) updates.customTitle = customTitle.trim();
 
     await updateDoc(doc(db, 'users', user.uid), updates);
     if (auth.currentUser) {
-      await updateProfile(auth.currentUser, { displayName, photoURL: photoURL || auth.currentUser.photoURL });
+      await updateProfile(auth.currentUser, {
+        displayName,
+        photoURL: photoURL || auth.currentUser.photoURL,
+      });
+    }
+  };
+
+  const dismissWelcomeModal = async (roleToken: string) => {
+    if (!user) return;
+    try {
+      await updateDoc(doc(db, 'users', user.uid), {
+        welcomeSeenForRole: roleToken,
+        updatedAt: new Date().toISOString(),
+      });
+      setProfile((prev) => (prev ? { ...prev, welcomeSeenForRole: roleToken } : null));
+    } catch (err) {
+      console.error('Error dismissing welcome modal:', err);
     }
   };
 
   const role: UserRole = profile?.role || 'PUBLIC';
-  const isSuperAdmin = role === 'SUPER_ADMIN';
+  const isSuperAdmin =
+    role === 'SUPER_ADMIN' ||
+    user?.email?.toLowerCase() === DESIGNATED_SUPER_ADMIN_EMAIL.toLowerCase();
   const isAdmin = role === 'ADMIN' || isSuperAdmin;
-  const isMember = (role === 'MEMBER' || isAdmin) && !profile?.isSuspended;
+  const isMember =
+    (role === 'MEMBER' ||
+      profile?.isAdminMember === true ||
+      profile?.adminMembershipStatus === 'APPROVED' ||
+      isAdmin) &&
+    !profile?.isSuspended;
   const isSuspended = profile?.isSuspended || false;
 
   return (
@@ -252,6 +324,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         isMember,
         isSuspended,
         loading,
+        unreadNotificationsCount,
         signInWithGoogle,
         registerWithEmail,
         loginWithEmail,
@@ -259,6 +332,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         bootstrapSuperAdmin,
         redeemInvitation,
         updateProfileDetails,
+        dismissWelcomeModal,
         resendVerificationEmail,
       }}
     >

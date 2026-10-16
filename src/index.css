@@ -1881,3 +1881,122 @@ img {
     font-size: 1.6rem;
   }
 }
+
+/* ---------- DARK THEME SUPPORT ---------- */
+body.dark {
+  background: #101012;
+  color: #f4f4f5;
+}
+
+body.dark .page {
+  color: #f4f4f5;
+}
+
+body.dark .topbar .brand {
+  box-shadow: 0 6px 0 #27272a;
+}
+
+body.dark .tabs {
+  background: #18181b;
+  border-color: #3f3f46;
+  box-shadow: 0 4px 0 #09090b;
+}
+
+body.dark .tab {
+  color: #a1a1aa;
+}
+
+body.dark .tab:hover {
+  background: #27272a;
+  color: #f4f4f5;
+}
+
+body.dark .tab.active {
+  background: #f9c74f;
+  color: #18181b;
+}
+
+body.dark .bg-white {
+  background-color: #18181b !important;
+  color: #f4f4f5;
+}
+
+body.dark .bg-zinc-50 {
+  background-color: #27272a !important;
+}
+
+body.dark .bg-zinc-100 {
+  background-color: #27272a !important;
+}
+
+body.dark .bg-zinc-200 {
+  background-color: #3f3f46 !important;
+}
+
+body.dark .border-zinc-200 {
+  border-color: #3f3f46 !important;
+}
+
+body.dark .border-zinc-300 {
+  border-color: #52525b !important;
+}
+
+body.dark .border-zinc-900,
+body.dark .border-\[\#1e1e1e\] {
+  border-color: #3f3f46 !important;
+}
+
+body.dark .text-zinc-900 {
+  color: #f4f4f5 !important;
+}
+
+body.dark .text-zinc-800 {
+  color: #e4e4e7 !important;
+}
+
+body.dark .text-zinc-700 {
+  color: #d4d4d8 !important;
+}
+
+body.dark .text-zinc-600 {
+  color: #a1a1aa !important;
+}
+
+body.dark .text-zinc-500 {
+  color: #71717a !important;
+}
+
+body.dark .card,
+body.dark .member-card,
+body.dark .mission-card,
+body.dark .gallery-item {
+  background: #18181b;
+  border-color: #3f3f46;
+  box-shadow: 0 8px 0 #09090b;
+}
+
+body.dark .modal {
+  background: #18181b !important;
+  color: #f4f4f5 !important;
+  border-color: #3f3f46 !important;
+  box-shadow: 0 12px 0 #09090b !important;
+}
+
+body.dark input,
+body.dark textarea,
+body.dark select {
+  background: #27272a !important;
+  color: #f4f4f5 !important;
+  border-color: #3f3f46 !important;
+}
+
+body.dark .mission-report {
+  background: #18181b;
+  border-color: #3f3f46;
+  box-shadow: 0 8px 0 #09090b;
+}
+
+body.dark .footer {
+  border-color: #27272a;
+}
+
