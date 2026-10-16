@@ -86,3 +86,33 @@ npm run lint
 # 4. Production build
 npm run build
 ```
+
+---
+
+## 5. GitHub Pages Deployment Guide (Fixing Blank White Page)
+
+If you deployed the repository to GitHub Pages and experienced a blank white page, this is caused by two common Vite/GitHub Pages pitfalls:
+1. **Asset Base Path Mismatch**: By default, Vite looks for JavaScript and CSS bundles at the domain root (`/assets/index.js`). Since GitHub Pages serves repositories under a subfolder (`https://ananta-ace.github.io/Cycle.exe/`), the browser returns `404 Not Found` for the bundles, causing a blank screen.
+2. **Serving Source Code (`.tsx`) Instead of Compiled `dist`**: If GitHub Pages is configured to serve from the repository root (`/`), browsers cannot execute raw TypeScript (`.tsx`) files, failing immediately.
+
+### How this was resolved:
+- **Relative Base Path**: `vite.config.ts` is configured with `base: './'` so that all bundle scripts, stylesheets, and assets load seamlessly regardless of whether the site is hosted at the root domain or inside a subpath like `/Cycle.exe/`.
+- **404 SPA Fallback**: The build pipeline automatically generates `dist/404.html` from `dist/index.html` so direct navigation and refreshes never hit a GitHub 404 page.
+- **Automated GitHub Actions Deployment**: A `.github/workflows/deploy.yml` workflow is included to build and publish the `./dist` bundle automatically on every push.
+
+### Step-by-Step GitHub Pages Setup:
+1. Push your repository to GitHub (`main` branch).
+2. Go to your repository on GitHub and click **Settings**.
+3. In the left sidebar, click **Pages**.
+4. Under **Build and deployment**:
+   - Set **Source** to **GitHub Actions**.
+5. Push any commit to `main` (or go to the **Actions** tab and click **Run workflow** on *Deploy to GitHub Pages*).
+6. Your site will automatically build and go live at `https://<username>.github.io/<repo-name>/` with no blank page!
+
+*(Alternative manual deploy)*:
+If using a `gh-pages` branch instead of GitHub Actions:
+```bash
+npm run deploy
+```
+Then under **Settings > Pages**, choose **Deploy from a branch** and select the `gh-pages` branch with the `/ (root)` folder.
+
