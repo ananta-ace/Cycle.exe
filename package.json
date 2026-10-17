@@ -8,7 +8,7 @@
     "build": "tsc && vite build",
     "predeploy": "npm run build",
     "deploy": "gh-pages -d dist",
-    "start": "tsx server.ts",
+    "start": "node server.ts",
     "lint": "tsc --noEmit",
     "preview": "vite preview"
   },

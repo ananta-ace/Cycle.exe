@@ -100,32 +100,32 @@ export const MembersView: React.FC<MembersViewProps> = ({
   return (
     <div>
       {/* Hero */}
-      <div className="hero mb-8">
-        <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-[#f9c74f]/30 border border-[#f9c74f] text-xs font-black text-amber-950 mb-3">
+      <div className="hero mb-12">
+        <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-[#f9c74f]/30 border border-[#f9c74f] text-xs font-black text-amber-950 mb-4">
           <i className="fas fa-crown text-[#f9c74f]"></i> Official Community Leadership Directory
         </div>
-        <h1 className="text-3xl md:text-4xl font-black text-zinc-900 tracking-tight">
+        <h1 className="text-3xl md:text-5xl font-black text-zinc-900 tracking-tight">
           <i className="fas fa-users text-[#f9c74f]"></i> The Crew &amp; Admin Members
         </h1>
-        <p className="text-sm md:text-base text-zinc-600 max-w-xl mx-auto mt-2">
+        <p className="text-base md:text-lg text-zinc-600 max-w-2xl mx-auto mt-3 leading-relaxed">
           Cycle.exe official group leaders, ride pace setters, and verified Admin Members. Tap any card to view their profile, custom title, mission history, or submit a rating.
         </p>
 
         {/* Application CTA banner */}
-        <div className="mt-6 max-w-xl mx-auto p-4 bg-white rounded-3xl border-3 border-[#1e1e1e] shadow-[0_5px_0_#1e1e1e] flex flex-col sm:flex-row items-center justify-between gap-4 text-left">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-2xl bg-[#1e1e1e] text-[#f9c74f] flex items-center justify-center text-lg border border-[#1e1e1e] shrink-0">
+        <div className="mt-8 max-w-3xl lg:max-w-4xl mx-auto p-6 sm:p-7 bg-white rounded-3xl border-3 border-[#1e1e1e] shadow-[0_6px_0_#1e1e1e] flex flex-col sm:flex-row items-center justify-between gap-6 text-left">
+          <div className="flex items-center gap-4">
+            <div className="w-12 h-12 rounded-2xl bg-[#1e1e1e] text-[#f9c74f] flex items-center justify-center text-xl border border-[#1e1e1e] shrink-0 shadow-sm">
               <i className="fas fa-bicycle"></i>
             </div>
             <div>
-              <h4 className="font-black text-sm text-zinc-900">
+              <h4 className="font-black text-base text-zinc-900">
                 {userIsApproved
                   ? 'You are an Approved Admin Member!'
                   : userIsPending
                   ? 'Your Admin Application is Pending'
                   : 'Want to Lead Group Rides?'}
               </h4>
-              <p className="text-xs text-zinc-600">
+              <p className="text-xs sm:text-sm text-zinc-600 mt-0.5">
                 {userIsApproved
                   ? 'Manage your custom title and view your community ratings.'
                   : userIsPending

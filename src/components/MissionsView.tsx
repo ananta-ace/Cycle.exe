@@ -214,15 +214,15 @@ export const MissionsView: React.FC = () => {
       </div>
 
       {/* Controls Bar */}
-      <div className="flex items-center justify-between flex-wrap gap-4 mb-6">
-        <div className="flex gap-2">
+      <div className="flex items-center justify-between flex-wrap gap-4 sm:gap-6 mb-8">
+        <div className="flex flex-wrap gap-2.5">
           {(['ALL', 'HISTORICAL', 'PUBLISHED'] as const).map((tab) => (
             <button
               key={tab}
               type="button"
               onClick={() => setFilter(tab)}
-              className={`text-xs font-bold py-1.5 px-3.5 rounded-full border border-zinc-900 transition ${
-                filter === tab ? 'bg-zinc-900 text-white' : 'bg-white text-zinc-800 hover:bg-zinc-100'
+              className={`text-xs sm:text-sm font-bold py-2 px-4 rounded-full border-2 border-zinc-900 transition ${
+                filter === tab ? 'bg-zinc-900 text-white' : 'bg-white text-zinc-800 hover:bg-zinc-100 shadow-[0_3px_0_#d6d2ca]'
               }`}
             >
               {tab === 'HISTORICAL' ? 'Original Crew (3)' : tab === 'PUBLISHED' ? 'Community Challenges' : 'All Missions'}
@@ -235,7 +235,7 @@ export const MissionsView: React.FC = () => {
           <button
             type="button"
             onClick={openCreateModal}
-            className="btn-primary text-xs py-2 px-4 font-bold flex items-center gap-2"
+            className="btn-primary text-xs sm:text-sm py-2.5 px-5 font-bold flex items-center gap-2"
           >
             <i className="fas fa-plus"></i> Create Community Mission
           </button>
@@ -244,20 +244,20 @@ export const MissionsView: React.FC = () => {
 
       {/* NEW COMMUNITY MISSIONS */}
       {loadingMissions && (
-        <div className="text-center py-4 text-xs font-bold text-zinc-500">
+        <div className="text-center py-8 text-sm font-bold text-zinc-500">
           <i className="fas fa-spinner fa-spin mr-2"></i> Loading community challenges...
         </div>
       )}
       {!loadingMissions && (filter === 'ALL' || filter === 'PUBLISHED') && communityMissions.length > 0 && (
-        <div className="mb-8">
-          <h2 className="text-xl font-bold mb-4 flex items-center gap-2">
+        <div className="mb-12">
+          <h2 className="text-2xl font-bold mb-6 flex items-center gap-3">
             <i className="fas fa-compass text-[#b45309]"></i> Active Community Challenges
           </h2>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 lg:gap-8">
             {communityMissions.map((cm) => (
               <div
                 key={cm.id}
-                className="neo-card flex flex-col justify-between hover:shadow-[0_12px_0_#d6d2ca] transition"
+                className="neo-card p-6 sm:p-8 flex flex-col justify-between hover:shadow-[0_12px_0_#d6d2ca] transition"
               >
                 <div>
                   <div className="flex items-center justify-between mb-2">

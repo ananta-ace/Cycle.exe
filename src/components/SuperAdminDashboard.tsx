@@ -520,30 +520,30 @@ export const SuperAdminDashboard: React.FC = () => {
   );
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-8">
       {/* Super Admin Top Header */}
-      <div className="neo-card bg-[#fff7ed] border-2 border-[#b45309] shadow-[0_8px_0_#fed7aa]">
-        <div className="flex items-center justify-between flex-wrap gap-4">
-          <div className="flex items-center gap-3">
-            <div className="w-12 h-12 rounded-full bg-[#1e1e1e] text-[#f9c74f] border-2 border-[#1e1e1e] flex items-center justify-center font-bold text-xl shadow-[0_4px_0_#b1b1b1]">
+      <div className="neo-card p-6 sm:p-8 bg-[#fff7ed] border-2 border-[#b45309] shadow-[0_8px_0_#fed7aa]">
+        <div className="flex items-center justify-between flex-wrap gap-6">
+          <div className="flex items-center gap-4">
+            <div className="w-14 h-14 rounded-full bg-[#1e1e1e] text-[#f9c74f] border-2 border-[#1e1e1e] flex items-center justify-center font-bold text-2xl shadow-[0_4px_0_#b1b1b1] shrink-0">
               <i className="fas fa-crown"></i>
             </div>
             <div>
-              <div className="flex items-center gap-2">
-                <h1 className="text-2xl font-bold">Super Admin Control Hub</h1>
+              <div className="flex items-center gap-3">
+                <h1 className="text-2xl sm:text-3xl font-black text-zinc-900">Super Admin Control Hub</h1>
                 <span className="role-badge SUPER_ADMIN">EXECUTIVE</span>
               </div>
-              <p className="text-xs text-zinc-700">
+              <p className="text-xs sm:text-sm text-zinc-700 mt-1">
                 Logged in as <strong>{user?.email}</strong>. Sole executive authority for Cycle.exe 2.0.
               </p>
             </div>
           </div>
 
-          <div className="flex flex-wrap gap-2 bg-white p-1 rounded-full border-2 border-zinc-900 shadow-[0_3px_0_#d6d2ca]">
+          <div className="flex flex-wrap gap-2.5 bg-white p-1.5 rounded-full border-2 border-zinc-900 shadow-[0_3px_0_#d6d2ca]">
             <button
               type="button"
               onClick={() => setAdminTab('applications')}
-              className={`text-xs font-bold py-1.5 px-3.5 rounded-full transition flex items-center gap-1.5 ${
+              className={`text-xs sm:text-sm font-bold py-2 px-4 rounded-full transition flex items-center gap-2 ${
                 adminTab === 'applications' ? 'bg-[#1e1e1e] text-[#f9c74f]' : 'text-zinc-700 hover:bg-zinc-100'
               }`}
             >
@@ -558,11 +558,11 @@ export const SuperAdminDashboard: React.FC = () => {
             <button
               type="button"
               onClick={() => setAdminTab('users')}
-              className={`text-xs font-bold py-1.5 px-3.5 rounded-full transition ${
+              className={`text-xs sm:text-sm font-bold py-2 px-4 rounded-full transition ${
                 adminTab === 'users' ? 'bg-[#1e1e1e] text-[#f9c74f]' : 'text-zinc-700 hover:bg-zinc-100'
               }`}
             >
-              <i className="fas fa-users-cog mr-1"></i> Users ({totalUsers})
+              <i className="fas fa-users-cog mr-1.5"></i> Users ({totalUsers})
             </button>
             <button
               type="button"

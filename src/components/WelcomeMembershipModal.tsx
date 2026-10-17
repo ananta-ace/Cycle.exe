@@ -48,7 +48,7 @@ export const WelcomeMembershipModal: React.FC = () => {
 
   return (
     <div className="modal-overlay open" role="dialog" aria-modal="true">
-      <div className="modal max-w-lg text-center p-6 border-4 border-[#1e1e1e] bg-white rounded-3xl shadow-[0_12px_0_#1e1e1e] animate-in fade-in zoom-in-95 duration-200">
+      <div className="modal max-w-xl text-center p-8 sm:p-10 border-4 border-[#1e1e1e] bg-white rounded-3xl shadow-[0_12px_0_#1e1e1e] animate-in fade-in zoom-in-95 duration-200">
         <div className="w-20 h-20 mx-auto mb-4 rounded-full bg-[#f9c74f] text-[#1e1e1e] border-3 border-[#1e1e1e] flex items-center justify-center text-3xl shadow-[0_4px_0_#1e1e1e]">
           <i className={`fas ${icon}`}></i>
         </div>

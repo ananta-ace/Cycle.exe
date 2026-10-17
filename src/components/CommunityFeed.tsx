@@ -447,44 +447,44 @@ export const CommunityFeed: React.FC = () => {
   };
 
   return (
-    <div className="max-w-3xl mx-auto space-y-6">
+    <div className="max-w-4xl xl:max-w-5xl mx-auto space-y-8">
       {/* Header */}
-      <div className="hero text-center mb-6">
-        <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-[#f9c74f]/30 border border-[#f9c74f] text-xs font-black text-amber-950 mb-3">
+      <div className="hero text-center mb-8">
+        <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-[#f9c74f]/30 border border-[#f9c74f] text-xs font-black text-amber-950 mb-3">
           <i className="fas fa-satellite-dish text-[#f9c74f]"></i> Live Rider Stream
         </div>
-        <h1 className="text-3xl md:text-4xl font-black text-zinc-900 tracking-tight">
+        <h1 className="text-3xl md:text-5xl font-black text-zinc-900 tracking-tight">
           <i className="fas fa-comments text-[#f9c74f]"></i> Community Feed
         </h1>
-        <p className="text-sm text-zinc-600 max-w-lg mx-auto mt-1">
+        <p className="text-base text-zinc-600 max-w-2xl mx-auto mt-2 leading-relaxed">
           Ride logs, route updates, gear discussions, and photos shared by our approved Admin Members and team.
         </p>
       </div>
 
       {/* Permission Notices */}
       {!user ? (
-        <div className="p-4 bg-white border-3 border-[#1e1e1e] rounded-3xl shadow-[0_4px_0_#1e1e1e] flex items-center justify-between gap-4">
-          <div className="flex items-center gap-3">
-            <i className="fas fa-info-circle text-amber-500 text-2xl"></i>
+        <div className="p-6 bg-white border-3 border-[#1e1e1e] rounded-3xl shadow-[0_5px_0_#1e1e1e] flex items-center justify-between gap-6">
+          <div className="flex items-center gap-4">
+            <i className="fas fa-info-circle text-amber-500 text-3xl"></i>
             <div>
-              <p className="font-black text-sm text-zinc-900">Viewing as Public Guest</p>
-              <p className="text-xs text-zinc-500">
+              <p className="font-black text-base text-zinc-900">Viewing as Public Guest</p>
+              <p className="text-xs sm:text-sm text-zinc-500 mt-0.5">
                 Sign in to view user profiles, explore missions, or apply for Admin Membership!
               </p>
             </div>
           </div>
         </div>
       ) : !isMember ? (
-        <div className="p-4 bg-amber-50 border-3 border-amber-400 rounded-3xl shadow-[0_4px_0_#1e1e1e] flex flex-col sm:flex-row items-center justify-between gap-4">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-2xl bg-[#1e1e1e] text-[#f9c74f] flex items-center justify-center text-lg border border-[#1e1e1e] shrink-0">
+        <div className="p-6 bg-amber-50 border-3 border-amber-400 rounded-3xl shadow-[0_5px_0_#1e1e1e] flex flex-col sm:flex-row items-center justify-between gap-6">
+          <div className="flex items-center gap-4">
+            <div className="w-12 h-12 rounded-2xl bg-[#1e1e1e] text-[#f9c74f] flex items-center justify-center text-xl border border-[#1e1e1e] shrink-0">
               <i className="fas fa-lock"></i>
             </div>
             <div>
-              <p className="font-black text-sm text-amber-950">
+              <p className="font-black text-base text-amber-950">
                 Posting is reserved for Approved Admin Members
               </p>
-              <p className="text-xs text-amber-900/80">
+              <p className="text-xs sm:text-sm text-amber-900/80 mt-0.5">
                 Normal accounts can view posts and rate leaders. Submit an application to unlock posting, liking, and commenting!
               </p>
             </div>
@@ -492,7 +492,7 @@ export const CommunityFeed: React.FC = () => {
           <button
             type="button"
             onClick={() => setIsApplyModalOpen(true)}
-            className="btn-primary py-2 px-4 text-xs font-black shrink-0 whitespace-nowrap"
+            className="btn-primary py-2.5 px-5 text-xs font-black shrink-0 whitespace-nowrap"
           >
             <i className="fas fa-paper-plane mr-1.5"></i> Apply for Admin Member
           </button>
@@ -501,9 +501,9 @@ export const CommunityFeed: React.FC = () => {
 
       {/* Post Creator Box (For Approved Admin Members, Admins, Super Admin) */}
       {isMember && (
-        <div className="bg-white p-5 rounded-3xl border-3 border-[#1e1e1e] shadow-[0_6px_0_#1e1e1e]">
-          <div className="flex items-center gap-3 mb-3">
-            <div className="w-10 h-10 rounded-full bg-zinc-200 border-2 border-zinc-900 overflow-hidden flex items-center justify-center font-bold text-sm shrink-0">
+        <div className="bg-white p-6 sm:p-8 rounded-3xl border-3 border-[#1e1e1e] shadow-[0_6px_0_#1e1e1e]">
+          <div className="flex items-center gap-3 mb-4">
+            <div className="w-12 h-12 rounded-full bg-zinc-200 border-2 border-zinc-900 overflow-hidden flex items-center justify-center font-bold text-base shrink-0">
               {profile?.photoURL ? (
                 <img src={profile.photoURL} alt="" className="w-full h-full object-cover" />
               ) : (
@@ -611,7 +611,7 @@ export const CommunityFeed: React.FC = () => {
           </p>
         </div>
       ) : (
-        <div className="space-y-5">
+        <div className="space-y-7">
           {posts.map((post) => {
             const isAuthor = user && user.uid === post.authorId;
             const canModerate = isSuperAdmin || isAdmin;
@@ -632,7 +632,7 @@ export const CommunityFeed: React.FC = () => {
             return (
               <div
                 key={post.id}
-                className="bg-white rounded-3xl border-3 border-[#1e1e1e] p-5 shadow-[0_6px_0_#1e1e1e] transition"
+                className="bg-white rounded-3xl border-3 border-[#1e1e1e] p-6 sm:p-8 shadow-[0_6px_0_#1e1e1e] transition"
               >
                 {/* Author Info */}
                 <div className="flex items-center justify-between mb-3">

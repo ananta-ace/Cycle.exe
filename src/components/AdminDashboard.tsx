@@ -126,16 +126,16 @@ export const AdminDashboard: React.FC = () => {
   const pendingApps = applications.filter((a) => a.status === 'PENDING');
 
   return (
-    <div className="max-w-4xl mx-auto space-y-6">
+    <div className="max-w-5xl xl:max-w-6xl mx-auto space-y-8">
       {/* Hero */}
-      <div className="hero mb-6">
-        <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-red-100 border border-red-300 text-xs font-black text-red-900 mb-2">
+      <div className="hero mb-8">
+        <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-red-100 border border-red-300 text-xs font-black text-red-900 mb-3">
           <i className="fas fa-shield-alt text-red-600"></i> Authorized Moderator Hub
         </div>
-        <h1 className="text-3xl font-black text-zinc-900">
+        <h1 className="text-3xl md:text-5xl font-black text-zinc-900">
           Moderator Dashboard
         </h1>
-        <p className="text-xs text-zinc-600 max-w-lg mx-auto mt-1">
+        <p className="text-sm md:text-base text-zinc-600 max-w-2xl mx-auto mt-2 leading-relaxed">
           Review community membership applications, recommend candidates to the Super Admin, and moderate reported content.
         </p>
 

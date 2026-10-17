@@ -52,7 +52,7 @@ export const MemberModal: React.FC<MemberModalProps> = ({
       aria-modal="true"
       aria-label={`${member.name} details`}
     >
-      <div className="modal max-w-lg p-6 max-h-[90vh] overflow-y-auto">
+      <div className="modal max-w-2xl p-7 sm:p-9 max-h-[90vh] overflow-y-auto">
         <button
           type="button"
           className="modal-close"

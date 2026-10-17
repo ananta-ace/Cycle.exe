@@ -150,7 +150,7 @@ export const RatingModal: React.FC<RatingModalProps> = ({
 
   return (
     <div className="modal-overlay open" role="dialog" aria-modal="true">
-      <div className="modal max-w-md p-6 border-3 border-[#1e1e1e] bg-white rounded-3xl shadow-[0_10px_0_#1e1e1e]">
+      <div className="modal max-w-lg p-7 sm:p-9 border-3 border-[#1e1e1e] bg-white rounded-3xl shadow-[0_10px_0_#1e1e1e]">
         <button
           type="button"
           className="modal-close"

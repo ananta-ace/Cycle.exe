@@ -115,7 +115,7 @@ export const NotificationsDrawer: React.FC<NotificationsDrawerProps> = ({
       role="dialog"
       aria-modal="true"
     >
-      <div className="modal max-w-md w-full p-5 border-3 border-[#1e1e1e] bg-white rounded-3xl shadow-[0_10px_0_#1e1e1e] max-h-[85vh] flex flex-col">
+      <div className="modal max-w-lg w-full p-6 sm:p-7 border-3 border-[#1e1e1e] bg-white rounded-3xl shadow-[0_10px_0_#1e1e1e] max-h-[85vh] flex flex-col">
         {/* Header */}
         <div className="flex items-center justify-between pb-3 border-b border-zinc-200 mb-3">
           <div className="flex items-center gap-2">

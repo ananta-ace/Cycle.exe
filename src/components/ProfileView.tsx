@@ -86,12 +86,12 @@ export const ProfileView: React.FC = () => {
   };
 
   return (
-    <div className="max-w-3xl mx-auto space-y-6">
+    <div className="max-w-4xl lg:max-w-5xl mx-auto space-y-8">
       {/* Profile Card */}
-      <div className="neo-card">
-        <div className="flex flex-col md:flex-row items-center md:items-start gap-6">
+      <div className="neo-card p-6 sm:p-9">
+        <div className="flex flex-col md:flex-row items-center md:items-start gap-8">
           <div className="relative group">
-            <div className="w-28 h-28 rounded-full border-4 border-zinc-900 bg-zinc-200 overflow-hidden flex items-center justify-center font-bold text-4xl shadow-[0_6px_0_#d6d2ca] flex-shrink-0">
+            <div className="w-32 h-32 rounded-full border-4 border-zinc-900 bg-zinc-200 overflow-hidden flex items-center justify-center font-bold text-4xl shadow-[0_6px_0_#d6d2ca] flex-shrink-0">
               {profile?.photoURL || photoURL ? (
                 <img
                   src={photoURL || profile?.photoURL}
@@ -103,7 +103,7 @@ export const ProfileView: React.FC = () => {
               )}
             </div>
             {isEditing && (
-              <label className="absolute bottom-0 right-0 w-8 h-8 rounded-full bg-[#1e1e1e] text-[#f9c74f] border-2 border-zinc-900 flex items-center justify-center cursor-pointer text-xs hover:bg-[#b45309]">
+              <label className="absolute bottom-0 right-0 w-9 h-9 rounded-full bg-[#1e1e1e] text-[#f9c74f] border-2 border-zinc-900 flex items-center justify-center cursor-pointer text-sm hover:bg-[#b45309] shadow-md">
                 <i className="fas fa-camera"></i>
                 <input
                   type="file"
@@ -116,29 +116,29 @@ export const ProfileView: React.FC = () => {
           </div>
 
           <div className="flex-1 text-center md:text-left">
-            <div className="flex flex-wrap items-center justify-center md:justify-start gap-3 mb-1">
-              <h2 className="text-2xl font-bold">{profile?.displayName || 'Cyclist'}</h2>
+            <div className="flex flex-wrap items-center justify-center md:justify-start gap-3 mb-2">
+              <h2 className="text-2xl sm:text-3xl font-black text-zinc-900">{profile?.displayName || 'Cyclist'}</h2>
               <span className={`role-badge ${role}`}>
                 <i className="fas fa-shield-alt text-[0.6rem]"></i> {role}
               </span>
             </div>
 
-            <p className="text-xs text-zinc-500 mb-3">
-              <i className="fas fa-envelope mr-1"></i> {user.email} · Registered{' '}
+            <p className="text-xs sm:text-sm text-zinc-500 mb-4">
+              <i className="fas fa-envelope mr-1.5 text-zinc-400"></i> {user.email} · Registered{' '}
               {new Date(profile?.createdAt || Date.now()).toLocaleDateString()}
             </p>
 
-            <div className="bg-[#f6f3ee] p-3 rounded-2xl border border-zinc-300 text-sm text-zinc-700 min-h-[60px] whitespace-pre-line mb-4">
+            <div className="bg-[#f6f3ee] p-4 sm:p-5 rounded-2xl border border-zinc-300 text-sm text-zinc-700 min-h-[70px] whitespace-pre-line mb-5 leading-relaxed">
               {profile?.bio || <span className="italic text-zinc-400">No bio written yet. Click edit to add your cycling background, favorite bike, and routes!</span>}
             </div>
 
             {saveMsg && (
-              <div className="p-2 mb-3 bg-emerald-50 border border-emerald-500 rounded-xl text-xs font-bold text-emerald-800">
+              <div className="p-3 mb-4 bg-emerald-50 border border-emerald-500 rounded-xl text-xs font-bold text-emerald-800">
                 {saveMsg}
               </div>
             )}
 
-            <div className="flex flex-wrap justify-center md:justify-start gap-2">
+            <div className="flex flex-wrap justify-center md:justify-start gap-3">
               <button
                 type="button"
                 onClick={() => setIsEditing(!isEditing)}

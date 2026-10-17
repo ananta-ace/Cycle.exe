@@ -82,7 +82,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
       role="dialog"
       aria-modal="true"
     >
-      <div className="modal max-w-md">
+      <div className="modal max-w-lg p-7 sm:p-9">
         <button
           type="button"
           className="modal-close"

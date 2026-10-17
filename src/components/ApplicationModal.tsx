@@ -178,7 +178,7 @@ export const ApplicationModal: React.FC<ApplicationModalProps> = ({
 
   return (
     <div className="modal-overlay open" role="dialog" aria-modal="true">
-      <div className="modal max-w-xl p-6 border-3 border-[#1e1e1e] bg-white rounded-3xl shadow-[0_10px_0_#1e1e1e] max-h-[90vh] overflow-y-auto">
+      <div className="modal max-w-2xl p-7 sm:p-9 border-3 border-[#1e1e1e] bg-white rounded-3xl shadow-[0_10px_0_#1e1e1e] max-h-[90vh] overflow-y-auto">
         <button
           type="button"
           className="modal-close"
