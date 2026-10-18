@@ -140,37 +140,45 @@ export const ApplicationModal: React.FC<ApplicationModalProps> = ({
         updatedAt: now,
       };
 
-      // Save application document with user UID as document ID to prevent duplicate pending applications
+      // Save application document with user UID as document ID
       await setDoc(doc(db, 'applications', user.uid), appData);
 
       // Create notification for Super Admin and Admins
-      await addDoc(collection(db, 'notifications'), {
-        recipientId: 'SUPER_ADMIN',
-        type: 'APPLICATION_SUBMITTED',
-        title: 'New Admin Member Application',
-        message: `${profile?.displayName || user.displayName || 'A rider'} submitted an application for Admin Membership.`,
-        applicantId: user.uid,
-        applicantName: profile?.displayName || user.displayName || 'Rider',
-        applicantPhotoURL: profile?.photoURL || user.photoURL || '',
-        isRead: false,
-        createdAt: now,
-      });
+      try {
+        await addDoc(collection(db, 'notifications'), {
+          recipientId: 'SUPER_ADMIN',
+          type: 'APPLICATION_SUBMITTED',
+          title: existingApp?.status === 'REJECTED' ? 'Admin Membership Application Re-Submitted' : 'New Admin Member Application',
+          message: `${profile?.displayName || user.displayName || 'A rider'} ${existingApp?.status === 'REJECTED' ? 're-submitted' : 'submitted'} an application for Admin Membership.`,
+          applicantId: user.uid,
+          applicantName: profile?.displayName || user.displayName || 'Rider',
+          applicantPhotoURL: profile?.photoURL || user.photoURL || '',
+          isRead: false,
+          createdAt: now,
+        });
+      } catch (notifErr) {
+        console.warn('Notification non-critical warning:', notifErr);
+      }
 
-      // Update user profile status
-      await setDoc(
-        doc(db, 'users', user.uid),
-        {
-          adminMembershipStatus: 'PENDING',
-          updatedAt: now,
-        },
-        { merge: true }
-      );
+      // Update user profile status if allowed
+      try {
+        await setDoc(
+          doc(db, 'users', user.uid),
+          {
+            adminMembershipStatus: 'PENDING',
+            updatedAt: now,
+          },
+          { merge: true }
+        );
+      } catch (userErr) {
+        console.warn('User status sync non-critical warning:', userErr);
+      }
 
       setSuccess(true);
       setExistingApp(appData);
     } catch (err: unknown) {
       console.error('Error submitting application:', err);
-      setError(err instanceof Error ? err.message : 'Failed to submit application');
+      setError(err instanceof Error ? err.message : 'Failed to submit application. Please try again.');
     } finally {
       setSubmitting(false);
     }
@@ -357,6 +365,10 @@ export const ApplicationModal: React.FC<ApplicationModalProps> = ({
                 ) : existingApp?.status === 'PENDING' ? (
                   <>
                     <i className="fas fa-check"></i> Application Pending Review
+                  </>
+                ) : existingApp?.status === 'REJECTED' ? (
+                  <>
+                    <i className="fas fa-redo"></i> Re-Submit Application
                   </>
                 ) : (
                   <>

@@ -32,6 +32,13 @@ const serverDb = initServerFirestore(serverApp, firebaseConfig.firestoreDatabase
 app.use(cors());
 app.use(express.json({ limit: '25mb' }));
 
+// Serve uploaded images statically
+const uploadsDir = path.resolve(process.cwd(), 'public', 'uploads');
+if (!fs.existsSync(uploadsDir)) {
+  fs.mkdirSync(uploadsDir, { recursive: true });
+}
+app.use('/uploads', express.static(uploadsDir));
+
 // -------------------------------------------------------------
 // In-Memory Fallback & Real-time State (Synced with Firestore)
 // -------------------------------------------------------------
@@ -39,6 +46,7 @@ interface StoredInvitation {
   id: string;
   codeHash: string;
   displayMasked: string;
+  targetRole: 'ADMIN' | 'MEMBER';
   expiresAt: string;
   isRedeemed: boolean;
   redeemedByUserId?: string;
@@ -61,16 +69,18 @@ interface StoredAuditLog {
 }
 
 interface ActiveSessionRecord {
-  userId: string;
+  sessionId: string;
+  userId?: string;
   email: string;
   role: string;
+  isGuest: boolean;
   lastActiveAt: number;
 }
 
 const activeSessions = new Map<string, ActiveSessionRecord>();
 const invitationCodes: StoredInvitation[] = [];
 const auditLogs: StoredAuditLog[] = [];
-let memberSlotLimit = 5; // Default 5 member slots
+let memberSlotLimit = 10; // Default 10 member slots
 
 // Rate limiting for invitation code attempts
 const redeemAttempts = new Map<string, { count: number; lockedUntil: number }>();
@@ -249,22 +259,70 @@ app.post('/api/bootstrap-super-admin', async (req: Request, res: Response) => {
   });
 });
 
-// 2. Active Session Heartbeat
-app.post('/api/session/heartbeat', (req: Request, res: Response) => {
-  const { uid, email, role } = getAuthFromReq(req);
-  if (uid) {
-    const isOwner = uid === DESIGNATED_SUPER_ADMIN_UID || email === DESIGNATED_SUPER_ADMIN_EMAIL.toLowerCase();
-    activeSessions.set(uid, {
-      userId: uid,
-      email,
-      role: isOwner ? 'SUPER_ADMIN' : role,
-      lastActiveAt: Date.now(),
-    });
+// 1.5 Photo Upload Endpoint (Saves to /public/uploads and returns static URL)
+app.post('/api/upload', (req: Request, res: Response) => {
+  try {
+    const { image, filename } = req.body;
+    if (!image || typeof image !== 'string') {
+      return res.status(400).json({ error: 'Missing image data' });
+    }
+
+    const matches = image.match(/^data:([A-Za-z-+\/]+);base64,(.+)$/);
+    if (!matches || matches.length !== 3) {
+      return res.status(400).json({ error: 'Invalid base64 image data' });
+    }
+
+    const mime = matches[1].toLowerCase();
+    const ext = mime.includes('png') ? 'png' : mime.includes('webp') ? 'webp' : 'jpg';
+    const buffer = Buffer.from(matches[2], 'base64');
+
+    const cleanName = (filename || 'photo').replace(/[^a-zA-Z0-9_-]/g, '_').substring(0, 30);
+    const uniqueFileName = `${Date.now()}_${crypto.randomBytes(3).toString('hex')}_${cleanName}.${ext}`;
+    const filePath = path.join(uploadsDir, uniqueFileName);
+
+    fs.writeFileSync(filePath, buffer);
+    const publicUrl = `/uploads/${uniqueFileName}`;
+
+    return res.json({ success: true, url: publicUrl, filename: uniqueFileName });
+  } catch (err) {
+    console.error('[Cycle.exe Server] Upload error:', err);
+    return res.status(500).json({ error: 'Failed to process image upload' });
   }
-  res.json({ success: true, timestamp: Date.now() });
 });
 
-// 3. Super Admin Analytics (RESTRICTED TO SUPER ADMIN ONLY)
+// 2. Active Session Heartbeat (Tracks BOTH authenticated users and anonymous guest visitors)
+app.post('/api/session/heartbeat', (req: Request, res: Response) => {
+  const { uid, email, role } = getAuthFromReq(req);
+  const visitorId = (req.body?.visitorId as string) || (req.headers['x-visitor-id'] as string) || '';
+  const sessionId = uid || visitorId || `guest_${req.ip.replace(/[^a-zA-Z0-9]/g, '_')}`;
+
+  const isOwner = uid === DESIGNATED_SUPER_ADMIN_UID || email === DESIGNATED_SUPER_ADMIN_EMAIL.toLowerCase();
+
+  activeSessions.set(sessionId, {
+    sessionId,
+    userId: uid || undefined,
+    email: email || (uid ? 'Registered Rider' : 'Guest Visitor'),
+    role: isOwner ? 'SUPER_ADMIN' : uid ? role : 'PUBLIC_GUEST',
+    isGuest: !uid,
+    lastActiveAt: Date.now(),
+  });
+
+  // Purge sessions inactive for > 2 minutes (120,000 ms)
+  const twoMinutesAgo = Date.now() - 2 * 60 * 1000;
+  for (const [key, session] of activeSessions.entries()) {
+    if (session.lastActiveAt < twoMinutesAgo) {
+      activeSessions.delete(key);
+    }
+  }
+
+  res.json({
+    success: true,
+    activeSessionsCount: activeSessions.size,
+    timestamp: Date.now(),
+  });
+});
+
+// 3. Super Admin Analytics & Real-Time Live Visitors (RESTRICTED TO SUPER ADMIN ONLY)
 app.get('/api/admin/stats', (req: Request, res: Response) => {
   const { uid, role, email } = getAuthFromReq(req);
 
@@ -279,24 +337,29 @@ app.get('/api/admin/stats', (req: Request, res: Response) => {
     });
   }
 
-  // Clean stale sessions (active in last 15 minutes)
-  const fifteenMinutesAgo = Date.now() - 15 * 60 * 1000;
+  // Clean stale sessions (active in last 3 minutes)
+  const threeMinutesAgo = Date.now() - 3 * 60 * 1000;
   for (const [id, session] of activeSessions.entries()) {
-    if (session.lastActiveAt < fifteenMinutesAgo) {
+    if (session.lastActiveAt < threeMinutesAgo) {
       activeSessions.delete(id);
     }
   }
 
   const activeSessionList = Array.from(activeSessions.values());
+  const guestCount = activeSessionList.filter((s) => s.isGuest).length;
+  const registeredCount = activeSessionList.filter((s) => !s.isGuest).length;
   const redeemedCount = invitationCodes.filter((c) => c.isRedeemed).length;
 
   res.json({
     success: true,
     activeSessionsCount: activeSessions.size,
+    guestVisitorsCount: guestCount,
+    registeredUsersCount: registeredCount,
     activeSessions: activeSessionList.map((s) => ({
-      userId: s.userId,
+      userId: s.userId || s.sessionId,
       email: s.email,
       role: s.role,
+      isGuest: s.isGuest,
       lastActive: new Date(s.lastActiveAt).toISOString(),
     })),
     invitationStats: {
@@ -309,7 +372,7 @@ app.get('/api/admin/stats', (req: Request, res: Response) => {
   });
 });
 
-// 4. Generate Membership Invitation Code (SUPER ADMIN ONLY)
+// 4. Generate Admin / Membership Invitation Code (SUPER ADMIN ONLY)
 app.post('/api/invitations/generate', (req: Request, res: Response) => {
   const { uid, email, role } = getAuthFromReq(req);
 
@@ -324,28 +387,25 @@ app.post('/api/invitations/generate', (req: Request, res: Response) => {
     });
   }
 
-  const redeemedCount = invitationCodes.filter((c) => c.isRedeemed && !c.isRevoked).length;
-  if (redeemedCount >= memberSlotLimit) {
-    return res.status(400).json({
-      error: `Member slot limit reached (${memberSlotLimit} slots). Increase slot limit to invite more members.`,
-    });
-  }
+  const targetRole: 'ADMIN' | 'MEMBER' = req.body.targetRole === 'MEMBER' ? 'MEMBER' : 'ADMIN';
 
   const p1 = crypto.randomBytes(2).toString('hex').toUpperCase();
   const p2 = crypto.randomBytes(2).toString('hex').toUpperCase();
-  const rawCode = `CYCLE-${p1}-${p2}`;
+  const roleTag = targetRole === 'ADMIN' ? 'ADMIN' : 'MBR';
+  const rawCode = `CYCLE-${roleTag}-${p1}-${p2}`;
   const codeHash = crypto.createHash('sha256').update(rawCode.trim().toUpperCase()).digest('hex');
 
   const expiryDays = req.body.expiryDays ? Number(req.body.expiryDays) : 30;
   const expiresAt = new Date(Date.now() + expiryDays * 24 * 60 * 60 * 1000).toISOString();
 
   const codeId = `code_${Date.now()}_${p1}`;
-  const displayMasked = `CYCLE-${p1}-****`;
+  const displayMasked = `CYCLE-${roleTag}-${p1}-****`;
 
   const record: StoredInvitation = {
     id: codeId,
     codeHash,
     displayMasked,
+    targetRole,
     expiresAt,
     isRedeemed: false,
     isRevoked: false,
@@ -361,16 +421,17 @@ app.post('/api/invitations/generate', (req: Request, res: Response) => {
     'GENERATE_INVITATION_CODE',
     'INVITATION_CODE',
     codeId,
-    `Generated code ${displayMasked} (expires in ${expiryDays} days)`
+    `Generated ${targetRole} invitation code ${displayMasked} (expires in ${expiryDays} days)`
   );
 
   return res.json({
     success: true,
     code: rawCode,
     displayMasked,
+    targetRole,
     expiresAt,
     codeId,
-    message: 'Secret invitation code generated. Share this single-use code securely.',
+    message: `Secret ${targetRole} invitation code generated. Share this single-use code securely.`,
   });
 });
 
@@ -394,6 +455,7 @@ app.get('/api/invitations', (req: Request, res: Response) => {
     codes: invitationCodes.map((c) => ({
       id: c.id,
       displayMasked: c.displayMasked,
+      targetRole: c.targetRole || 'ADMIN',
       expiresAt: c.expiresAt,
       isRedeemed: c.isRedeemed,
       redeemedByEmail: c.redeemedByEmail,
@@ -405,6 +467,7 @@ app.get('/api/invitations', (req: Request, res: Response) => {
     slotLimit: memberSlotLimit,
   });
 });
+
 
 // 6. Revoke Invitation Code (SUPER ADMIN ONLY)
 app.post('/api/invitations/revoke', (req: Request, res: Response) => {
@@ -472,8 +535,8 @@ app.post('/api/invitations/update-limit', (req: Request, res: Response) => {
   res.json({ success: true, memberSlotLimit });
 });
 
-// 8. Redeem Invitation Code (PUBLIC USERS BECOMING MEMBERS)
-app.post('/api/invitations/redeem', (req: Request, res: Response) => {
+// 8. Redeem Invitation Code (PUBLIC USERS BECOMING ADMINS OR MEMBERS)
+app.post('/api/invitations/redeem', async (req: Request, res: Response) => {
   const { uid, email } = getAuthFromReq(req);
   const { code } = req.body;
 
@@ -522,12 +585,7 @@ app.post('/api/invitations/redeem', (req: Request, res: Response) => {
     return res.status(400).json({ error: 'This invitation code has expired.' });
   }
 
-  const activeMembersCount = invitationCodes.filter((c) => c.isRedeemed && !c.isRevoked).length;
-  if (activeMembersCount >= memberSlotLimit) {
-    return res.status(400).json({
-      error: 'The Cycle.exe member roster is currently at capacity. Contact Super Admin.',
-    });
-  }
+  const targetRole = foundCode.targetRole || 'ADMIN';
 
   foundCode.isRedeemed = true;
   foundCode.redeemedByUserId = uid;
@@ -536,19 +594,56 @@ app.post('/api/invitations/redeem', (req: Request, res: Response) => {
 
   redeemAttempts.delete(attemptKey);
 
+  // Directly and reliably update user document in Firestore via serverDb
+  try {
+    const userDocRef = serverDoc(serverDb, 'users', uid);
+    await serverSetDoc(
+      userDocRef,
+      {
+        id: uid,
+        role: targetRole,
+        isAdminMember: targetRole === 'ADMIN' ? true : undefined,
+        adminMembershipStatus: targetRole === 'ADMIN' ? 'APPROVED' : undefined,
+        updatedAt: new Date().toISOString(),
+      },
+      { merge: true }
+    );
+
+    // Write system notification
+    const notifId = `notif_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+    await serverSetDoc(
+      serverDoc(serverDb, 'notifications', notifId),
+      {
+        id: notifId,
+        recipientId: uid,
+        type: 'STATUS_CHANGED',
+        title: targetRole === 'ADMIN' ? 'Admin Access Granted! 🛡️' : 'Membership Activated! 🚴',
+        message:
+          targetRole === 'ADMIN'
+            ? 'Your Admin invitation code was verified. You now have full Admin access on Cycle.exe!'
+            : 'Your membership invitation code was verified. Welcome to the Cycle.exe Crew!',
+        isRead: false,
+        createdAt: new Date().toISOString(),
+      },
+      { merge: true }
+    );
+  } catch (dbErr) {
+    console.error('[Cycle.exe Server] Error updating user role in Firestore on redeem:', dbErr);
+  }
+
   addAuditLog(
     uid,
     email,
     'REDEEM_INVITATION_CODE',
     'USER',
     uid,
-    `User ${email} activated MEMBER role via code ${foundCode.displayMasked}`
+    `User ${email} activated ${targetRole} role via invitation token ${foundCode.displayMasked}`
   );
 
   return res.json({
     success: true,
-    newRole: 'MEMBER',
-    message: 'Membership activated successfully! Welcome to the Cycle.exe Crew.',
+    newRole: targetRole,
+    message: `Invitation redeemed! You are now an official ${targetRole === 'ADMIN' ? 'Admin' : 'Member'} of Cycle.exe.`,
   });
 });
 

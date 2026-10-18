@@ -33,8 +33,14 @@ export const RatingModal: React.FC<RatingModalProps> = ({
       try {
         setLoading(true);
         setError(null);
-        const ratingDocRef = doc(db, 'users', targetMember.id, 'ratings', user.uid);
-        const snap = await getDoc(ratingDocRef);
+        // Check featuredMembers ratings first, then users
+        const featRef = doc(db, 'featuredMembers', targetMember.id, 'ratings', user.uid);
+        let snap = await getDoc(featRef);
+        if (!snap.exists()) {
+          const userRef = doc(db, 'users', targetMember.id, 'ratings', user.uid);
+          snap = await getDoc(userRef);
+        }
+
         if (snap.exists()) {
           const data = snap.data() as MemberRating;
           setExistingRating(data);
@@ -46,7 +52,7 @@ export const RatingModal: React.FC<RatingModalProps> = ({
           setComment('');
         }
       } catch (err) {
-        console.error('Error fetching rating:', err);
+        console.warn('Notice when fetching rating:', err);
       } finally {
         setLoading(false);
       }
@@ -57,32 +63,50 @@ export const RatingModal: React.FC<RatingModalProps> = ({
 
   if (!isOpen || !targetMember) return null;
 
-  const isSelfRating = user && user.uid === targetMember.id;
+  const isSelfRating = user && (user.uid === targetMember.id || user.uid === targetMember.userId);
 
-  // Recalculate average and total count on user document
+  // Recalculate average and total count on member document
   const aggregateRatings = async (targetId: string) => {
     try {
-      const ratingsRef = collection(db, 'users', targetId, 'ratings');
-      const snap = await getDocs(ratingsRef);
-      if (snap.empty) {
-        await setDoc(
-          doc(db, 'users', targetId),
-          { ratingAverage: 0, ratingCount: 0, updatedAt: new Date().toISOString() },
-          { merge: true }
-        );
-        return;
-      }
+      // 1. Gather all ratings from featuredMembers ratings subcollection
+      const featRatingsRef = collection(db, 'featuredMembers', targetId, 'ratings');
+      const snap = await getDocs(featRatingsRef);
+
       let sum = 0;
+      let count = 0;
       snap.forEach((d) => {
         const r = (d.data() as MemberRating).rating || 0;
-        sum += r;
+        if (r > 0) {
+          sum += r;
+          count++;
+        }
       });
-      const avg = Number((sum / snap.size).toFixed(1));
-      await setDoc(
-        doc(db, 'users', targetId),
-        { ratingAverage: avg, ratingCount: snap.size, updatedAt: new Date().toISOString() },
-        { merge: true }
-      );
+
+      const avg = count > 0 ? Number((sum / count).toFixed(1)) : 0;
+      const now = new Date().toISOString();
+
+      // Update featuredMembers document
+      try {
+        await setDoc(
+          doc(db, 'featuredMembers', targetId),
+          { ratingAverage: avg, ratingCount: count, updatedAt: now },
+          { merge: true }
+        );
+      } catch (e) {
+        console.warn('Update featured member ratings warning:', e);
+      }
+
+      // If linked user document exists, update users collection too
+      const linkedUserId = targetMember.userId || targetId;
+      try {
+        await setDoc(
+          doc(db, 'users', linkedUserId),
+          { ratingAverage: avg, ratingCount: count, updatedAt: now },
+          { merge: true }
+        );
+      } catch {
+        // May not exist or client may not have update permission
+      }
     } catch (err) {
       console.warn('Error aggregating ratings:', err);
     }
@@ -91,7 +115,7 @@ export const RatingModal: React.FC<RatingModalProps> = ({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!user) {
-      setError('You must be signed in to rate an Admin Member.');
+      setError('You must be signed in to rate a crew leader.');
       return;
     }
     if (isSelfRating) {
@@ -103,7 +127,6 @@ export const RatingModal: React.FC<RatingModalProps> = ({
       setSubmitting(true);
       setError(null);
 
-      const ratingDocRef = doc(db, 'users', targetMember.id, 'ratings', user.uid);
       const ratingData: MemberRating = {
         id: user.uid,
         targetMemberId: targetMember.id,
@@ -115,14 +138,26 @@ export const RatingModal: React.FC<RatingModalProps> = ({
         updatedAt: new Date().toISOString(),
       };
 
-      await setDoc(ratingDocRef, ratingData);
+      // Save to featuredMembers ratings subcollection
+      const featRatingDocRef = doc(db, 'featuredMembers', targetMember.id, 'ratings', user.uid);
+      await setDoc(featRatingDocRef, ratingData);
+
+      // Attempt saving to users collection ratings if target is registered user
+      try {
+        const userRatingDocRef = doc(db, 'users', targetMember.id, 'ratings', user.uid);
+        await setDoc(userRatingDocRef, ratingData);
+      } catch {
+        // Target may only be in featuredMembers
+      }
+
+      // Recalculate rating average
       await aggregateRatings(targetMember.id);
 
       if (onRatingUpdated) onRatingUpdated();
       onClose();
     } catch (err: unknown) {
       console.error('Error submitting rating:', err);
-      setError(err instanceof Error ? err.message : 'Failed to submit rating');
+      setError(err instanceof Error ? err.message : 'Failed to submit rating. Please try again.');
     } finally {
       setSubmitting(false);
     }
@@ -134,8 +169,16 @@ export const RatingModal: React.FC<RatingModalProps> = ({
 
     try {
       setSubmitting(true);
-      const ratingDocRef = doc(db, 'users', targetMember.id, 'ratings', user.uid);
-      await deleteDoc(ratingDocRef);
+      const featRatingDocRef = doc(db, 'featuredMembers', targetMember.id, 'ratings', user.uid);
+      await deleteDoc(featRatingDocRef);
+
+      try {
+        const userRatingDocRef = doc(db, 'users', targetMember.id, 'ratings', user.uid);
+        await deleteDoc(userRatingDocRef);
+      } catch {
+        // Non-fatal
+      }
+
       await aggregateRatings(targetMember.id);
 
       if (onRatingUpdated) onRatingUpdated();

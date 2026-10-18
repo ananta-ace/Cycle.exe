@@ -11,12 +11,12 @@ import {
   setDoc,
   getDocs,
 } from 'firebase/firestore';
-import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
-import { db, storage } from '../firebase';
+import { db } from '../firebase';
 import { useAuth } from '../context/AuthContext';
 import { Post, PostComment } from '../types';
 import { ReportModal } from './ReportModal';
 import { ApplicationModal } from './ApplicationModal';
+import { uploadImage } from '../utils/imageUpload';
 
 export const CommunityFeed: React.FC = () => {
   const { user, profile, isMember, isSuperAdmin, isAdmin } = useAuth();
@@ -160,34 +160,12 @@ export const CommunityFeed: React.FC = () => {
       if (selectedFiles.length > 0) {
         for (let i = 0; i < selectedFiles.length; i++) {
           const file = selectedFiles[i];
-          const fileName = `${Date.now()}_${Math.random().toString(36).substring(2, 8)}_${file.name.replace(/[^a-zA-Z0-9.-]/g, '_')}`;
-          const storageRef = ref(storage, `posts/${user.uid}/${fileName}`);
-
           try {
-            const uploadTask = uploadBytesResumable(storageRef, file);
-            await new Promise<void>((resolve, reject) => {
-              uploadTask.on(
-                'state_changed',
-                (snapshot) => {
-                  const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
-                  setUploadProgress(Math.round(progress));
-                },
-                (err) => reject(err),
-                async () => {
-                  const url = await getDownloadURL(uploadTask.snapshot.ref);
-                  uploadedUrls.push(url);
-                  resolve();
-                }
-              );
-            });
-          } catch {
-            // Fallback to inline Base64 if storage is unavailable
-            const base64Url = await new Promise<string>((resolve) => {
-              const reader = new FileReader();
-              reader.onloadend = () => resolve(reader.result as string);
-              reader.readAsDataURL(file);
-            });
-            uploadedUrls.push(base64Url);
+            setUploadProgress(Math.round(((i + 1) / selectedFiles.length) * 80));
+            const url = await uploadImage(file);
+            uploadedUrls.push(url);
+          } catch (fileErr) {
+            console.error('File upload error:', fileErr);
           }
         }
       }

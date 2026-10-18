@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
 import { Member } from '../types';
-import { missionMetaList } from '../data';
 
 interface MemberModalProps {
   member: Member | null;
@@ -108,7 +107,7 @@ export const MemberModal: React.FC<MemberModalProps> = ({
           <div className="modal-status-row mt-3">
             {member.active ? (
               <span className="modal-pill active-pill">
-                <i className="fas fa-circle"></i> Active Member
+                <i className="fas fa-circle"></i> Active Rider
               </span>
             ) : (
               <span className="modal-pill inactive-pill">
@@ -117,53 +116,66 @@ export const MemberModal: React.FC<MemberModalProps> = ({
             )}
             <span className={`modal-pill attend-pill ${member.perfect ? 'perfect' : ''}`}>
               <i className={`fas ${member.perfect ? 'fa-medal' : 'fa-check'}`}></i>{' '}
-              {member.attend} missions
+              {member.attend || 'Regular Rider'}
             </span>
           </div>
 
+          {/* Badges display */}
+          {member.badges && member.badges.length > 0 && (
+            <div className="mt-4 pt-3 border-t border-zinc-200">
+              <span className="text-[11px] font-black uppercase tracking-wider text-zinc-500 block mb-1.5">
+                <i className="fas fa-award text-[#f9c74f] mr-1"></i> Earned Community Badges
+              </span>
+              <div className="flex flex-wrap justify-center gap-1.5">
+                {member.badges.map((b, idx) => (
+                  <span
+                    key={idx}
+                    className="px-2.5 py-1 rounded-full bg-amber-50 border border-amber-300 text-amber-950 font-bold text-xs flex items-center gap-1"
+                  >
+                    <i className="fas fa-shield-alt text-amber-600 text-[10px]"></i>
+                    {b}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+
           {member.bio && (
-            <p className="mt-3 text-xs text-zinc-600 max-w-sm mx-auto leading-relaxed italic">
+            <p className="mt-3 text-xs text-zinc-600 max-w-sm mx-auto leading-relaxed italic bg-zinc-50 p-2.5 rounded-xl border border-zinc-200">
               "{member.bio}"
             </p>
           )}
         </div>
 
+        {/* Completed Races List */}
         <div className="modal-section-title mt-4">
-          <i className="fas fa-flag-checkered"></i> Mission &amp; Community Participation
+          <i className="fas fa-flag-checkered"></i> Completed Expeditions &amp; Races ({member.completedRaces?.length || (member.completedRacesCount || 0)})
         </div>
 
-        <div className="mission-list">
-          {missionMetaList.map((m) => {
-            const attended = member.missions?.[m.id as keyof typeof member.missions] ?? false;
-            const itemCls = attended ? 'mission-item' : 'mission-item missed';
-            const iconCls = attended ? m.cls : 'missed-icon';
-            const checkIcon = attended
-              ? 'fa-circle-check mission-check'
-              : 'fa-circle-xmark mission-check missed-check';
-
-            return (
-              <div key={m.id} className={itemCls}>
-                <div className={`mission-icon ${iconCls}`}>
-                  <i className={`fas ${attended ? m.icon : 'fa-minus'}`}></i>
+        {member.completedRaces && member.completedRaces.length > 0 ? (
+          <div className="space-y-2 mb-4">
+            {member.completedRaces.map((race, rIdx) => (
+              <div
+                key={rIdx}
+                className="p-2.5 bg-zinc-50 border border-zinc-200 rounded-xl flex items-center justify-between text-xs font-bold text-zinc-800"
+              >
+                <div className="flex items-center gap-2">
+                  <span className="w-5 h-5 rounded-full bg-[#1e1e1e] text-[#f9c74f] flex items-center justify-center text-[10px] font-black">
+                    {rIdx + 1}
+                  </span>
+                  <span>{race}</span>
                 </div>
-                <div className="mission-info">
-                  <div className="mission-name font-bold">
-                    Mission {m.num} · {m.name || m.title}
-                  </div>
-                  <div className="mission-meta">
-                    <span>
-                      <i className="fas fa-calendar-alt"></i> {m.shortDate}
-                    </span>
-                    <span>
-                      <i className="fas fa-road"></i> {m.totalDist}
-                    </span>
-                  </div>
-                </div>
-                <i className={`fas ${checkIcon}`}></i>
+                <span className="text-emerald-700 text-[11px] flex items-center gap-1">
+                  <i className="fas fa-check-circle"></i> Completed
+                </span>
               </div>
-            );
-          })}
-        </div>
+            ))}
+          </div>
+        ) : (
+          <p className="text-xs text-zinc-500 italic text-center py-3">
+            Races and ride participations are recorded and verified by the Super Admin.
+          </p>
+        )}
       </div>
     </div>
   );

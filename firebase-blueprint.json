@@ -234,9 +234,39 @@
         "createdAt": { "type": "string", "format": "date-time" }
       },
       "required": ["id", "actorId", "action", "targetType", "targetId", "createdAt"]
+    },
+    "FeaturedMember": {
+      "title": "FeaturedMember",
+      "description": "Featured leadership crew rider displayed on the home screen, curated by Super Admin",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "userId": { "type": "string", "maxLength": 128 },
+        "name": { "type": "string", "maxLength": 80 },
+        "title": { "type": "string", "maxLength": 80 },
+        "img": { "type": "string", "maxLength": 500 },
+        "initial": { "type": "string", "maxLength": 10 },
+        "active": { "type": "boolean" },
+        "attend": { "type": "string", "maxLength": 60 },
+        "perfect": { "type": "boolean" },
+        "bio": { "type": "string", "maxLength": 1000 },
+        "ratingAverage": { "type": "number" },
+        "ratingCount": { "type": "number" },
+        "badges": { "type": "array" },
+        "completedRaces": { "type": "array" },
+        "completedRacesCount": { "type": "number" },
+        "order": { "type": "number" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "name", "title", "active", "attend", "createdAt"]
     }
   },
   "firestore": {
+    "/featuredMembers/{memberId}": {
+      "schema": { "$ref": "#/entities/FeaturedMember" },
+      "description": "Featured riders displayed on the home screen curated by Super Admin"
+    },
     "/users/{userId}": {
       "schema": { "$ref": "#/entities/UserPublic" },
       "description": "Public user profile and assigned community role"

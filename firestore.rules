@@ -72,7 +72,7 @@ service cloud.firestore {
           request.resource.data.id == resource.data.id &&
           request.resource.data.displayName is string &&
           request.resource.data.displayName.size() <= 80 &&
-          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['displayName', 'photoURL', 'bio', 'customTitle', 'welcomeSeenForRole', 'updatedAt'])
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['displayName', 'photoURL', 'bio', 'customTitle', 'welcomeSeenForRole', 'adminMembershipStatus', 'updatedAt'])
         ) ||
         (
           // Allow rating updates to be aggregated
@@ -101,6 +101,27 @@ service cloud.firestore {
       }
     }
 
+    // Featured Members Collection (Home Screen Leadership Crew - Super Admin Managed)
+    match /featuredMembers/{memberId} {
+      allow get, list: if true;
+      allow create, delete: if isSuperAdmin();
+      allow update: if isSuperAdmin() || (
+        isSignedIn() &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['ratingAverage', 'ratingCount', 'updatedAt'])
+      );
+
+      // Ratings on featured members
+      match /ratings/{raterId} {
+        allow get, list: if isValidId(memberId) && isValidId(raterId);
+        allow create, update: if isValidId(memberId) && isValidId(raterId) &&
+          isSignedIn() &&
+          request.auth.uid == raterId &&
+          request.resource.data.rating >= 1 &&
+          request.resource.data.rating <= 5;
+        allow delete: if isValidId(raterId) && (request.auth.uid == raterId || isSuperAdmin());
+      }
+    }
+
     // Applications Collection (Admin Membership)
     match /applications/{appId} {
       allow get: if isValidId(appId) && isSignedIn() && (
@@ -120,10 +141,19 @@ service cloud.firestore {
         (
           isAdmin() &&
           request.resource.data.diff(resource.data).affectedKeys().hasOnly(['adminRecommendations', 'updatedAt'])
+        ) ||
+        (
+          isSignedIn() &&
+          resource.data.userId == request.auth.uid &&
+          request.resource.data.userId == request.auth.uid &&
+          request.resource.data.status == 'PENDING'
         )
       );
 
-      allow delete: if isValidId(appId) && isSuperAdmin();
+      allow delete: if isValidId(appId) && (
+        isSuperAdmin() ||
+        (isSignedIn() && resource.data.userId == request.auth.uid)
+      );
     }
 
     // Notifications Collection

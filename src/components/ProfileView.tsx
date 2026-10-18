@@ -7,7 +7,7 @@ export const ProfileView: React.FC = () => {
     profile,
     role,
     isSuperAdmin,
-    isMember,
+    isAdmin,
     updateProfileDetails,
     redeemInvitation,
     signOutUser,
@@ -211,40 +211,50 @@ export const ProfileView: React.FC = () => {
         )}
       </div>
 
-      {/* SECTION: "Become a Cycle.exe Member" */}
+      {/* SECTION: "Redeem Invitation Code (Admin or Member)" */}
       <div className="neo-card bg-[#fffdf9] border-2 border-zinc-900 shadow-[0_8px_0_#d6d2ca]">
         <div className="flex items-center gap-3 mb-3">
           <div className="w-10 h-10 rounded-full bg-[#f9c74f] border-2 border-zinc-900 flex items-center justify-center text-zinc-900 font-bold text-lg">
             <i className="fas fa-ticket-alt"></i>
           </div>
           <div>
-            <h3 className="text-xl font-bold">Become a Cycle.exe Member</h3>
+            <h3 className="text-xl font-bold">Redeem Invitation Code</h3>
             <p className="text-xs text-zinc-600">
-              Redeem a single-use invitation code provided by the Super Admin to unlock member privileges.
+              Redeem a single-use Admin or Member invitation code provided by the Super Admin.
             </p>
           </div>
         </div>
 
         <div className="bg-[#f6f3ee] p-4 rounded-2xl border border-zinc-300 mb-4">
           <div className="flex items-center justify-between flex-wrap gap-2 mb-2">
-            <span className="text-xs font-bold uppercase tracking-wider text-zinc-600">Current Status:</span>
+            <span className="text-xs font-bold uppercase tracking-wider text-zinc-600">Current Role:</span>
             <span className={`role-badge ${role}`}>{role}</span>
           </div>
 
-          {isMember ? (
+          {isAdmin ? (
             <div className="flex items-center gap-2 text-xs font-bold text-emerald-800">
-              <i className="fas fa-check-circle text-base text-emerald-600"></i>
-              <span>Your membership is active! You can publish posts, upload ride photos, like content, and participate in discussions.</span>
+              <i className="fas fa-shield-alt text-base text-emerald-600"></i>
+              <span>You have active Administrator clearance on Cycle.exe.</span>
+            </div>
+          ) : role === 'MEMBER' ? (
+            <div className="space-y-1">
+              <div className="flex items-center gap-2 text-xs font-bold text-emerald-800">
+                <i className="fas fa-check-circle text-base text-emerald-600"></i>
+                <span>Your membership is active!</span>
+              </div>
+              <p className="text-xs text-zinc-600">
+                If the Super Admin provided you with an <strong>Admin Invitation Code</strong> (e.g. <code>CYCLE-ADMIN-...</code>), enter it below to upgrade to <strong>Admin</strong>.
+              </p>
             </div>
           ) : (
             <p className="text-xs text-zinc-600 leading-relaxed">
-              You are currently registered as a <strong>Public User</strong>. Enter your secret membership invitation code below to upgrade to <strong>Member</strong>.
+              You are currently registered as a <strong>Public User</strong>. Enter an invitation code from the Super Admin below to activate <strong>Admin</strong> or <strong>Member</strong> privileges.
             </p>
           )}
         </div>
 
-        {/* Code Activation Form */}
-        {!isMember && (
+        {/* Code Activation Form for anyone not yet an Admin */}
+        {!isAdmin && (
           <form onSubmit={handleRedeemCode} className="space-y-3">
             <div>
               <label className="block text-xs font-bold uppercase tracking-wider mb-1 text-zinc-700">
@@ -256,7 +266,7 @@ export const ProfileView: React.FC = () => {
                   required
                   value={inviteCode}
                   onChange={(e) => setInviteCode(e.target.value.toUpperCase())}
-                  placeholder="e.g. CYCLE-A8B2-9F1C"
+                  placeholder="e.g. CYCLE-ADMIN-A8B2-9F1C"
                   className="neo-input uppercase tracking-wider font-mono text-sm py-2.5 flex-1"
                 />
                 <button
@@ -266,11 +276,11 @@ export const ProfileView: React.FC = () => {
                 >
                   {activating ? (
                     <>
-                      <i className="fas fa-spinner fa-spin"></i> Activating...
+                      <i className="fas fa-spinner fa-spin"></i> Verifying...
                     </>
                   ) : (
                     <>
-                      <i className="fas fa-unlock-alt"></i> Activate Membership
+                      <i className="fas fa-unlock-alt"></i> Redeem Code
                     </>
                   )}
                 </button>

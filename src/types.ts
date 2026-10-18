@@ -44,6 +44,13 @@ export interface Member {
   ratingAverage?: number;
   ratingCount?: number;
   isCustomMember?: boolean;
+  userId?: string;
+  badges?: string[];
+  completedRaces?: string[];
+  completedRacesCount?: number;
+  order?: number;
+  createdAt?: string;
+  updatedAt?: string;
   missions?: {
     m1: boolean;
     m2: boolean;
@@ -218,6 +225,7 @@ export interface GalleryItem {
 export interface InvitationCodeSummary {
   id: string;
   displayMasked: string;
+  targetRole?: 'ADMIN' | 'MEMBER';
   expiresAt: string;
   isRedeemed: boolean;
   redeemedByEmail?: string;

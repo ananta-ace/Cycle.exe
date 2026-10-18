@@ -8,10 +8,10 @@ import {
   deleteDoc,
   doc,
 } from 'firebase/firestore';
-import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
-import { db, storage } from '../firebase';
+import { db } from '../firebase';
 import { useAuth } from '../context/AuthContext';
 import { GalleryPhoto } from '../types';
+import { uploadImage } from '../utils/imageUpload';
 
 interface GalleryViewProps {
   onOpenLightbox?: (index: number) => void;
@@ -63,8 +63,8 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ onOpenLightbox }) => {
       setUploadError('Only image files (JPEG, PNG, WebP) are allowed.');
       return;
     }
-    if (file.size > 8 * 1024 * 1024) {
-      setUploadError('Image size must be under 8MB.');
+    if (file.size > 15 * 1024 * 1024) {
+      setUploadError('Image size must be under 15MB.');
       return;
     }
     setUploadError(null);
@@ -89,37 +89,12 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ onOpenLightbox }) => {
 
     try {
       setUploading(true);
+      setUploadProgress(40);
       setUploadError(null);
-      let photoURL = '';
 
-      // Upload to Storage or fallback to Base64
-      try {
-        const fileName = `${Date.now()}_${uploadFile.name.replace(/[^a-zA-Z0-9.-]/g, '_')}`;
-        const storageRef = ref(storage, `gallery/${fileName}`);
-        const uploadTask = uploadBytesResumable(storageRef, uploadFile);
-
-        await new Promise<void>((resolve, reject) => {
-          uploadTask.on(
-            'state_changed',
-            (snap) => {
-              const progress = (snap.bytesTransferred / snap.totalBytes) * 100;
-              setUploadProgress(Math.round(progress));
-            },
-            (err) => reject(err),
-            async () => {
-              photoURL = await getDownloadURL(uploadTask.snapshot.ref);
-              resolve();
-            }
-          );
-        });
-      } catch {
-        // Fallback to inline Data URL
-        photoURL = await new Promise<string>((resolve) => {
-          const reader = new FileReader();
-          reader.onloadend = () => resolve(reader.result as string);
-          reader.readAsDataURL(uploadFile);
-        });
-      }
+      // Fast, resilient upload via backend or compressed canvas
+      const photoURL = await uploadImage(uploadFile);
+      setUploadProgress(90);
 
       const photoData: Omit<GalleryPhoto, 'id'> = {
         title: uploadTitle.trim(),
@@ -131,6 +106,7 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ onOpenLightbox }) => {
       };
 
       await addDoc(collection(db, 'gallery'), photoData);
+      setUploadProgress(100);
 
       // Reset form
       setUploadTitle('');

@@ -149,14 +149,10 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           }
         });
 
-        // Send active session heartbeat
-        sendHeartbeat(currentUser);
-        const interval = setInterval(() => sendHeartbeat(currentUser), 120000);
-
+        // Heartbeat will be handled globally
         setLoading(false);
         return () => {
           unsubProfile();
-          clearInterval(interval);
         };
       } else {
         setProfile(null);
@@ -167,21 +163,41 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     return () => unsubscribe();
   }, []);
 
-  const sendHeartbeat = async (u: User) => {
+  // Send real-time heartbeat for live visitor tracking (both guests and users)
+  useEffect(() => {
+    let visitorId = '';
     try {
-      await fetch('/api/session/heartbeat', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-user-id': u.uid,
-          'x-user-email': u.email || '',
-          'x-user-role': profile?.role || 'PUBLIC',
-        },
-      });
+      visitorId = localStorage.getItem('cycle_visitor_id') || '';
+      if (!visitorId) {
+        visitorId = `v_${Math.random().toString(36).substring(2, 9)}_${Date.now()}`;
+        localStorage.setItem('cycle_visitor_id', visitorId);
+      }
     } catch {
-      // Non-blocking
+      visitorId = `v_temp_${Date.now()}`;
     }
-  };
+
+    const sendBeat = async () => {
+      try {
+        await fetch('/api/session/heartbeat', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-user-id': user?.uid || '',
+            'x-user-email': user?.email || '',
+            'x-user-role': profile?.role || 'PUBLIC',
+            'x-visitor-id': visitorId,
+          },
+          body: JSON.stringify({ visitorId }),
+        });
+      } catch {
+        // Non-blocking
+      }
+    };
+
+    sendBeat();
+    const interval = setInterval(sendBeat, 20000);
+    return () => clearInterval(interval);
+  }, [user, profile?.role]);
 
   const signInWithGoogle = async () => {
     const provider = new GoogleAuthProvider();
@@ -238,7 +254,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   };
 
   const redeemInvitation = async (code: string) => {
-    if (!user) throw new Error('Please sign in first.');
+    if (!user) throw new Error('Please sign in first to redeem an invitation code.');
 
     const res = await fetch('/api/invitations/redeem', {
       method: 'POST',
@@ -247,19 +263,24 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         'x-user-id': user.uid,
         'x-user-email': user.email || '',
       },
-      body: JSON.stringify({ code }),
+      body: JSON.stringify({ code: code.trim() }),
     });
 
     const data = await res.json();
-    if (!res.ok) throw new Error(data.error || 'Failed to activate membership');
+    if (!res.ok) throw new Error(data.error || 'Failed to redeem invitation code');
 
-    // Update Firestore role
-    await updateDoc(doc(db, 'users', user.uid), {
-      role: 'MEMBER',
-      updatedAt: new Date().toISOString(),
-    });
+    const newRole = (data.newRole as UserRole) || 'ADMIN';
+    setProfile((prev) =>
+      prev
+        ? {
+            ...prev,
+            role: newRole,
+            isAdminMember: newRole === 'ADMIN' ? true : prev.isAdminMember,
+            adminMembershipStatus: newRole === 'ADMIN' ? 'APPROVED' : prev.adminMembershipStatus,
+          }
+        : null
+    );
 
-    setProfile((prev) => (prev ? { ...prev, role: 'MEMBER' } : null));
     return { success: true, message: data.message };
   };
 

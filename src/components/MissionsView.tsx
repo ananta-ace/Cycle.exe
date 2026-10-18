@@ -8,101 +8,178 @@ import {
   updateDoc,
   deleteDoc,
   doc,
+  getDocs,
 } from 'firebase/firestore';
 import { db } from '../firebase';
 import { useAuth } from '../context/AuthContext';
-import { MissionReport } from '../types';
-import { missionMetaList, members } from '../data';
+import { MissionReport, MissionSegment } from '../types';
+import { missionMetaList as initialMissions } from '../data';
 
 export const MissionsView: React.FC = () => {
   const { isSuperAdmin, user } = useAuth();
 
-  const [communityMissions, setCommunityMissions] = useState<MissionReport[]>([]);
-  const [loadingMissions, setLoadingMissions] = useState(true);
-  const [filter, setFilter] = useState<'ALL' | 'HISTORICAL' | 'PUBLISHED' | 'ARCHIVED'>('ALL');
+  const [missions, setMissions] = useState<MissionReport[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  // Mission Modal state for Create / Edit
+  // Modal State
   const [modalOpen, setModalOpen] = useState(false);
   const [editingMissionId, setEditingMissionId] = useState<string | null>(null);
 
-  // Form fields
-  const [title, setTitle] = useState('');
-  const [description, setDescription] = useState('');
-  const [coverPhoto, setCoverPhoto] = useState('');
-  const [startDate, setStartDate] = useState('');
-  const [endDate, setEndDate] = useState('');
-  const [distanceKm, setDistanceKm] = useState('30');
-  const [durationHours, setDurationHours] = useState('2.5');
-  const [difficulty, setDifficulty] = useState<'EASY' | 'MEDIUM' | 'HARD' | 'EXTREME'>('MEDIUM');
-  const [rules, setRules] = useState('');
-  const [location, setLocation] = useState('');
-  const [instructions, setInstructions] = useState('');
-  const [status, setStatus] = useState<'COMING_SOON' | 'UPCOMING' | 'ONGOING' | 'ENDED' | 'CANCELLED' | 'DRAFT' | 'PUBLISHED'>('UPCOMING');
-  const [reward, setReward] = useState('');
+  // Form Fields
+  const [num, setNum] = useState('004');
+  const [name, setName] = useState('');
+  const [fullDate, setFullDate] = useState('');
+  const [shortDate, setShortDate] = useState('');
+  const [time, setTime] = useState('');
+  const [duration, setDuration] = useState('');
+  const [avgSpeed, setAvgSpeed] = useState('');
+  const [totalDist, setTotalDist] = useState('');
+  const [variant, setVariant] = useState<'default' | 'alt-accent' | 'green-accent'>('default');
+  const [icon, setIcon] = useState('fa-map-signs');
+  const [isDuo, setIsDuo] = useState(false);
+  const [crewNames, setCrewNames] = useState('');
+  const [crewNote, setCrewNote] = useState('');
+  const [segments, setSegments] = useState<MissionSegment[]>([
+    { num: 1, segment: '', distance: '' },
+  ]);
+
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
 
-  // Detail Modal for any mission
-  const [selectedMission, setSelectedMission] = useState<MissionReport | null>(null);
-
-  // 1. Listen for dynamic Firestore community missions
+  // 1. Synchronize missions from Firestore (seed initial missions if empty)
   useEffect(() => {
-    const q = query(collection(db, 'missions'), orderBy('createdAt', 'desc'));
+    const q = query(collection(db, 'missions'), orderBy('createdAt', 'asc'));
+
     const unsub = onSnapshot(
       q,
-      (snapshot) => {
+      async (snapshot) => {
+        if (snapshot.empty) {
+          const alreadySeeded = localStorage.getItem('cycle_missions_seeded');
+          // If Firestore collection is empty and has never been seeded, seed initial missions once
+          if (isSuperAdmin && !alreadySeeded) {
+            try {
+              localStorage.setItem('cycle_missions_seeded', 'true');
+              for (const initM of initialMissions) {
+                await addDoc(collection(db, 'missions'), {
+                  ...initM,
+                  status: 'PUBLISHED',
+                  createdAt: new Date().toISOString(),
+                  updatedAt: new Date().toISOString(),
+                });
+              }
+              return;
+            } catch (seedErr) {
+              console.warn('Seeding missions notice:', seedErr);
+            }
+          } else if (!alreadySeeded) {
+            setMissions(initialMissions);
+            setLoading(false);
+            return;
+          } else {
+            setMissions([]);
+            setLoading(false);
+            return;
+          }
+        }
+
         const list: MissionReport[] = [];
         snapshot.forEach((snap) => {
           list.push({ id: snap.id, ...(snap.data() as Omit<MissionReport, 'id'>) });
         });
-        setCommunityMissions(list);
-        setLoadingMissions(false);
+
+        localStorage.setItem('cycle_missions_seeded', 'true');
+        setMissions(list);
+        setLoading(false);
       },
       (err) => {
-        console.error('Error listening to missions:', err);
-        setLoadingMissions(false);
+        console.warn('Error listening to missions:', err);
+        setMissions(initialMissions);
+        setLoading(false);
       }
     );
 
     return () => unsub();
-  }, []);
+  }, [isSuperAdmin]);
 
+  // Modal openers
   const openCreateModal = () => {
     setEditingMissionId(null);
-    setTitle('');
-    setDescription('');
-    setCoverPhoto('');
-    setStartDate(new Date().toISOString().split('T')[0]);
-    setEndDate(new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]);
-    setDistanceKm('35');
-    setDurationHours('3');
-    setDifficulty('MEDIUM');
-    setRules('Helmets required. Respect traffic lights. Stay with the group paceline.');
-    setLocation('Hatirjheel Cycling Loop / Dhaka');
-    setInstructions('Arrive 15 minutes before departure. Check tire pressure and front/rear lights.');
-    setStatus('UPCOMING');
-    setReward('Cycle.exe Mission Finisher Badge');
+    const nextNum = String(missions.length + 1).padStart(3, '0');
+    setNum(nextNum);
+    setName('');
+    const today = new Date();
+    const formattedDate = today.toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
+    const formattedShort = today.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+    setFullDate(formattedDate);
+    setShortDate(formattedShort);
+    setTime('3:30 PM · Finished 6:30 PM');
+    setDuration('3h 00m');
+    setAvgSpeed('~12.0 km/h');
+    setTotalDist('35.0 km');
+    setVariant('default');
+    setIcon('fa-map-signs');
+    setIsDuo(false);
+    setCrewNames('Ananta, Joy, Borson, Sahal');
+    setCrewNote('');
+    setSegments([
+      { num: 1, segment: 'Start Point → Intermediate Checkpoint', distance: '15.0 km' },
+      { num: 2, segment: 'Intermediate Checkpoint → Finish Loop', distance: '20.0 km' },
+    ]);
     setFormError(null);
     setModalOpen(true);
   };
 
   const openEditModal = (m: MissionReport) => {
     setEditingMissionId(m.id);
-    setTitle(m.title || m.name || '');
-    setDescription(m.description || '');
-    setCoverPhoto(m.coverPhoto || '');
-    setStartDate(m.startDate || '');
-    setEndDate(m.endDate || '');
-    setDistanceKm(String(m.distanceTargetKm || m.totalDist?.replace(/[^0-9.]/g, '') || 30));
-    setDurationHours(String(m.durationTargetHours || 2));
-    setDifficulty(m.difficulty || 'MEDIUM');
-    setRules(m.rules || '');
-    setLocation(m.location || '');
-    setInstructions(m.instructions || '');
-    setStatus(m.status || 'UPCOMING');
-    setReward(m.rewardDescription || '');
+    setNum(m.num || '001');
+    setName(m.name || m.title || '');
+    setFullDate(m.fullDate || m.shortDate || '');
+    setShortDate(m.shortDate || '');
+    setTime(m.time || '');
+    setDuration(m.duration || '');
+    setAvgSpeed(m.avgSpeed || '');
+    setTotalDist(m.totalDist || '');
+    setVariant(m.variant || 'default');
+    setIcon(m.icon || 'fa-map-signs');
+    setIsDuo(!!m.isDuo);
+    setCrewNames(m.crewIds ? m.crewIds.join(', ') : '');
+    setCrewNote(m.crewNote || '');
+    setSegments(m.segments && m.segments.length > 0 ? m.segments : [{ num: 1, segment: '', distance: '' }]);
     setFormError(null);
     setModalOpen(true);
+  };
+
+  const handleAddSegment = () => {
+    setSegments((prev) => [...prev, { num: prev.length + 1, segment: '', distance: '' }]);
+  };
+
+  const handleRemoveSegment = (index: number) => {
+    setSegments((prev) => {
+      const updated = prev.filter((_, i) => i !== index);
+      return updated.map((s, i) => ({ ...s, num: i + 1 }));
+    });
+  };
+
+  const handleSegmentChange = (index: number, field: 'segment' | 'distance', value: string) => {
+    setSegments((prev) => {
+      const updated = [...prev];
+      updated[index] = { ...updated[index], [field]: value };
+      return updated;
+    });
+  };
+
+  // Auto calculate total distance from segments
+  const calculateTotalDistance = () => {
+    let sum = 0;
+    segments.forEach((s) => {
+      const numMatch = s.distance.match(/([0-9.]+)/);
+      if (numMatch) {
+        sum += parseFloat(numMatch[1]);
+      }
+    });
+    if (sum > 0) {
+      setTotalDist(`${sum.toFixed(1)} km`);
+    }
   };
 
   const handleSaveMission = async (e: React.FormEvent) => {
@@ -112,8 +189,8 @@ export const MissionsView: React.FC = () => {
       return;
     }
 
-    if (!title.trim()) {
-      setFormError('Please enter a mission title.');
+    if (!name.trim()) {
+      setFormError('Please enter a mission title/name.');
       return;
     }
 
@@ -121,24 +198,32 @@ export const MissionsView: React.FC = () => {
       setSaving(true);
       setFormError(null);
 
+      // Clean crew list
+      const parsedCrew = crewNames
+        .split(',')
+        .map((c) => c.trim())
+        .filter((c) => c.length > 0);
+
       const missionPayload: Omit<MissionReport, 'id'> = {
-        title: title.trim(),
-        description: description.trim(),
-        coverPhoto: coverPhoto.trim(),
-        startDate,
-        endDate,
-        distanceTargetKm: Number(distanceKm) || 0,
-        durationTargetHours: Number(durationHours) || 0,
-        difficulty,
-        rules: rules.trim(),
-        location: location.trim(),
-        instructions: instructions.trim(),
-        status,
-        rewardDescription: reward.trim(),
+        num: num.trim() || '001',
+        name: name.trim(),
+        title: name.trim(),
+        fullDate: fullDate.trim(),
+        shortDate: shortDate.trim() || fullDate.trim(),
+        time: time.trim(),
+        duration: duration.trim(),
+        avgSpeed: avgSpeed.trim(),
+        totalDist: totalDist.trim(),
+        icon: icon.trim() || 'fa-map-signs',
+        variant,
+        isDuo,
+        status: 'PUBLISHED',
+        segments: segments.filter((s) => s.segment.trim().length > 0),
+        crewIds: parsedCrew,
+        crewNote: crewNote.trim(),
         createdBy: user?.uid || 'super-admin',
-        createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
-        segments: [],
+        createdAt: new Date().toISOString(),
       };
 
       if (editingMissionId) {
@@ -156,210 +241,161 @@ export const MissionsView: React.FC = () => {
     }
   };
 
-  const handleDeleteMission = async (missionId: string) => {
+  const handleDeleteMission = async (missionId: string, missionName: string) => {
     if (!isSuperAdmin) {
       alert('Only the Super Admin can delete missions.');
       return;
     }
 
-    if (!confirm('Are you sure you want to delete this mission? This cannot be undone.')) return;
+    if (!confirm(`Are you sure you want to permanently delete Mission "${missionName}"?`)) return;
 
     try {
-      await deleteDoc(doc(db, 'missions', missionId));
+      // Find and delete the doc from Firestore
+      const snap = await getDocs(collection(db, 'missions'));
+      let foundDocId: string | null = null;
+
+      snap.forEach((d) => {
+        if (d.id === missionId || d.data().num === missionId || d.data().name === missionName) {
+          foundDocId = d.id;
+        }
+      });
+
+      if (foundDocId) {
+        await deleteDoc(doc(db, 'missions', foundDocId));
+      } else {
+        await deleteDoc(doc(db, 'missions', missionId));
+      }
+
+      // Also update local view
+      setMissions((prev) => prev.filter((m) => m.id !== missionId && m.name !== missionName));
     } catch (err) {
       console.error('Error deleting mission:', err);
+      alert('Failed to delete mission from database.');
     }
   };
 
   return (
     <div>
       {/* Hero */}
-      <div className="hero">
-        <h1>
-          <i className="fas fa-flag-checkered"></i> Mission Operations
+      <div className="hero mb-8">
+        <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-[#f9c74f]/30 border border-[#f9c74f] text-xs font-black text-amber-950 mb-3">
+          <i className="fas fa-flag-checkered text-[#f9c74f]"></i> Verified Ride Logs
+        </div>
+        <h1 className="text-3xl md:text-5xl font-black text-zinc-900 tracking-tight">
+          <i className="fas fa-map-signs text-[#f9c74f]"></i> Mission Operations &amp; Logs
         </h1>
-        <p>Every ride, every route, every rider. Verified cycling expeditions and challenges.</p>
+        <p className="text-base text-zinc-600 max-w-2xl mx-auto mt-2">
+          Every ride, route segment, and pace record. Authenticated cycling missions logged and verified by Cycle.exe leadership.
+        </p>
+
+        {/* Super Admin Create Mission Button */}
+        {isSuperAdmin && (
+          <div className="mt-6 flex justify-center">
+            <button
+              type="button"
+              onClick={openCreateModal}
+              className="btn-primary py-3 px-6 text-xs sm:text-sm font-black flex items-center gap-2 shadow-[0_5px_0_#1e1e1e]"
+            >
+              <i className="fas fa-plus"></i> Create New Mission
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Stats Bar */}
       <div className="stats">
         <div className="stat-item">
-          <i className="fas fa-users stat-icon"></i>
-          <div className="stat-content">
-            <span className="stat-number">6</span>
-            <span className="stat-label">crew riders</span>
-          </div>
-        </div>
-        <div className="stat-item">
           <i className="fas fa-trophy stat-icon"></i>
           <div className="stat-content">
-            <span className="stat-number">{3 + communityMissions.length}</span>
+            <span className="stat-number">{missions.length}</span>
             <span className="stat-label">total missions</span>
           </div>
         </div>
         <div className="stat-item">
           <i className="fas fa-road stat-icon"></i>
           <div className="stat-content">
-            <span className="stat-number">103.7+</span>
-            <span className="stat-label">km logged</span>
+            <span className="stat-number">
+              {missions
+                .reduce((acc, m) => {
+                  const match = m.totalDist?.match(/([0-9.]+)/);
+                  return acc + (match ? parseFloat(match[1]) : 0);
+                }, 0)
+                .toFixed(1)}{' '}
+              km
+            </span>
+            <span className="stat-label">total distance</span>
+          </div>
+        </div>
+        <div className="stat-item">
+          <i className="fas fa-tachometer-alt stat-icon"></i>
+          <div className="stat-content">
+            <span className="stat-number">~11.5</span>
+            <span className="stat-label">avg speed (km/h)</span>
           </div>
         </div>
         <div className="stat-item">
           <i className="fas fa-heart stat-icon"></i>
           <div className="stat-content">
             <span className="stat-number">100%</span>
-            <span className="stat-label">good vibes</span>
+            <span className="stat-label">crew spirit</span>
           </div>
         </div>
       </div>
 
-      {/* Controls Bar */}
-      <div className="flex items-center justify-between flex-wrap gap-4 sm:gap-6 mb-8">
-        <div className="flex flex-wrap gap-2.5">
-          {(['ALL', 'HISTORICAL', 'PUBLISHED'] as const).map((tab) => (
-            <button
-              key={tab}
-              type="button"
-              onClick={() => setFilter(tab)}
-              className={`text-xs sm:text-sm font-bold py-2 px-4 rounded-full border-2 border-zinc-900 transition ${
-                filter === tab ? 'bg-zinc-900 text-white' : 'bg-white text-zinc-800 hover:bg-zinc-100 shadow-[0_3px_0_#d6d2ca]'
-              }`}
-            >
-              {tab === 'HISTORICAL' ? 'Original Crew (3)' : tab === 'PUBLISHED' ? 'Community Challenges' : 'All Missions'}
-            </button>
-          ))}
-        </div>
-
-        {/* Super Admin Exclusive: Create Mission */}
-        {isSuperAdmin && (
-          <button
-            type="button"
-            onClick={openCreateModal}
-            className="btn-primary text-xs sm:text-sm py-2.5 px-5 font-bold flex items-center gap-2"
-          >
-            <i className="fas fa-plus"></i> Create Community Mission
-          </button>
-        )}
+      {/* Section Header */}
+      <div className="section-title">
+        <i className="fas fa-flag-checkered"></i>
+        <span>Expedition Logs</span>
+        <span>
+          <i className="fas fa-bolt"></i> {missions.length} {missions.length === 1 ? 'ride' : 'rides'}
+        </span>
       </div>
 
-      {/* NEW COMMUNITY MISSIONS */}
-      {loadingMissions && (
-        <div className="text-center py-8 text-sm font-bold text-zinc-500">
-          <i className="fas fa-spinner fa-spin mr-2"></i> Loading community challenges...
-        </div>
-      )}
-      {!loadingMissions && (filter === 'ALL' || filter === 'PUBLISHED') && communityMissions.length > 0 && (
-        <div className="mb-12">
-          <h2 className="text-2xl font-bold mb-6 flex items-center gap-3">
-            <i className="fas fa-compass text-[#b45309]"></i> Active Community Challenges
-          </h2>
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 lg:gap-8">
-            {communityMissions.map((cm) => (
-              <div
-                key={cm.id}
-                className="neo-card p-6 sm:p-8 flex flex-col justify-between hover:shadow-[0_12px_0_#d6d2ca] transition"
-              >
-                <div>
-                  <div className="flex items-center justify-between mb-2">
-                    <span
-                      className={`text-[0.65rem] font-bold uppercase px-2.5 py-0.5 rounded-full border ${
-                        cm.difficulty === 'EXTREME'
-                          ? 'bg-red-100 text-red-800 border-red-300'
-                          : cm.difficulty === 'HARD'
-                          ? 'bg-orange-100 text-orange-800 border-orange-300'
-                          : 'bg-emerald-100 text-emerald-800 border-emerald-300'
-                      }`}
-                    >
-                      {cm.difficulty || 'MEDIUM'} DIFFICULTY
-                    </span>
-                    <span className="text-[0.68rem] font-mono text-zinc-500">
-                      {cm.startDate ? `${cm.startDate} to ${cm.endDate}` : 'Ongoing'}
-                    </span>
-                  </div>
-
-                  <h3 className="text-xl font-bold mb-2">{cm.title}</h3>
-                  <p className="text-xs text-zinc-600 line-clamp-3 mb-4 leading-relaxed">
-                    {cm.description}
-                  </p>
-
-                  <div className="flex items-center gap-4 text-xs font-bold text-zinc-700 mb-4 bg-[#f6f3ee] p-2.5 rounded-xl border border-zinc-200">
-                    <span>
-                      <i className="fas fa-road text-[#b45309] mr-1"></i> {cm.distanceTargetKm} km
-                    </span>
-                    {cm.durationTargetHours ? (
-                      <span>
-                        <i className="fas fa-clock text-[#b45309] mr-1"></i> ~{cm.durationTargetHours} hrs
-                      </span>
-                    ) : null}
-                    {cm.rewardDescription ? (
-                      <span className="truncate">
-                        <i className="fas fa-medal text-amber-500 mr-1"></i> {cm.rewardDescription}
-                      </span>
-                    ) : null}
-                  </div>
-                </div>
-
-                <div className="flex items-center justify-between pt-3 border-t border-zinc-200">
-                  <button
-                    type="button"
-                    onClick={() => setSelectedMission(cm)}
-                    className="text-xs font-bold text-zinc-900 hover:text-[#b45309] underline underline-offset-2"
-                  >
-                    View Mission Briefing &amp; Rules →
-                  </button>
-
-                  {/* Super Admin Action Controls */}
-                  {isSuperAdmin && (
-                    <div className="flex gap-2">
-                      <button
-                        type="button"
-                        onClick={() => openEditModal(cm)}
-                        title="Edit Mission"
-                        className="w-7 h-7 rounded-full bg-zinc-100 hover:bg-zinc-200 text-xs flex items-center justify-center text-zinc-700"
-                      >
-                        <i className="fas fa-pencil-alt"></i>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleDeleteMission(cm.id)}
-                        title="Delete Mission"
-                        className="w-7 h-7 rounded-full bg-zinc-100 hover:bg-red-100 hover:text-red-600 text-xs flex items-center justify-center text-zinc-700"
-                      >
-                        <i className="fas fa-trash-alt"></i>
-                      </button>
-                    </div>
-                  )}
-                </div>
-              </div>
-            ))}
-          </div>
+      {/* Loading state */}
+      {loading && (
+        <div className="text-center py-12 text-zinc-500 font-bold text-sm">
+          <i className="fas fa-spinner fa-spin text-2xl mb-2 block"></i> Loading mission records...
         </div>
       )}
 
-      {/* ORIGINAL 3 HISTORICAL MISSIONS */}
-      {(filter === 'ALL' || filter === 'HISTORICAL') && (
-        <div>
-          <div className="section-title">
-            <i className="fas fa-flag-checkered"></i>
-            <span>Historic Crew Expeditions</span>
-            <span>
-              <i className="fas fa-bolt"></i> 3 rides
-            </span>
-          </div>
-
-          {missionMetaList.map((m) => {
+      {/* MISSIONS LIST - ALL MISSIONS RENDER WITH IDENTICAL DESIGN & LAYOUT */}
+      {!loading && (
+        <div className="space-y-8">
+          {missions.map((m) => {
             let accentClass = '';
             if (m.variant === 'alt-accent') accentClass = 'alt-accent';
             else if (m.variant === 'green-accent') accentClass = 'green-accent';
 
             return (
-              <div key={m.id} className={`mission-report ${accentClass}`}>
+              <div key={m.id || m.num} className={`mission-report ${accentClass} relative group`}>
+                {/* Super Admin Control Buttons */}
+                {isSuperAdmin && (
+                  <div className="absolute top-4 right-4 flex items-center gap-2 z-10">
+                    <button
+                      type="button"
+                      onClick={() => openEditModal(m)}
+                      title="Edit Mission Details"
+                      className="px-3 py-1.5 rounded-xl bg-white border-2 border-[#1e1e1e] text-xs font-black text-zinc-800 hover:bg-[#f9c74f] shadow-[0_2px_0_#1e1e1e] transition flex items-center gap-1.5"
+                    >
+                      <i className="fas fa-pencil-alt text-amber-700"></i> Edit
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleDeleteMission(m.id, m.name || m.title)}
+                      title="Delete Mission"
+                      className="px-3 py-1.5 rounded-xl bg-rose-50 border-2 border-rose-600 text-xs font-black text-rose-800 hover:bg-rose-100 shadow-[0_2px_0_#991b1b] transition flex items-center gap-1.5"
+                    >
+                      <i className="fas fa-trash-alt"></i> Delete
+                    </button>
+                  </div>
+                )}
+
                 <div className="report-badge">
-                  <i className="fas fa-flag"></i> Mission {m.num}
+                  <i className="fas fa-flag"></i> Mission {m.num || '001'}
                 </div>
 
                 <h2>
-                  <i className="fas fa-map-signs"></i> {m.name}
+                  <i className={`fas ${m.icon || 'fa-map-signs'}`}></i> {m.name || m.title}
                   {m.isDuo && (
                     <span className="duo-badge">
                       <i className="fas fa-user-friends"></i> Duo Ride
@@ -368,80 +404,84 @@ export const MissionsView: React.FC = () => {
                 </h2>
 
                 <div className="report-meta">
-                  <span>
-                    <i className="fas fa-calendar-alt"></i> {m.fullDate}
-                  </span>
-                  <span>
-                    <i className="fas fa-clock"></i> {m.time}
-                  </span>
-                  <span>
-                    <i className="fas fa-hourglass-half"></i> Duration: {m.duration}
-                  </span>
-                  <span>
-                    <i className="fas fa-tachometer-alt"></i> Avg speed: {m.avgSpeed}
-                  </span>
+                  {m.fullDate && (
+                    <span>
+                      <i className="fas fa-calendar-alt"></i> {m.fullDate}
+                    </span>
+                  )}
+                  {m.time && (
+                    <span>
+                      <i className="fas fa-clock"></i> {m.time}
+                    </span>
+                  )}
+                  {m.duration && (
+                    <span>
+                      <i className="fas fa-hourglass-half"></i> Duration: {m.duration}
+                    </span>
+                  )}
+                  {m.avgSpeed && (
+                    <span>
+                      <i className="fas fa-tachometer-alt"></i> Avg speed: {m.avgSpeed}
+                    </span>
+                  )}
                 </div>
 
-                <table className="route-table">
-                  <thead>
-                    <tr>
-                      <th>#</th>
-                      <th>Segment</th>
-                      <th style={{ textAlign: 'right' }}>Distance</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {m.segments?.map((seg) => (
-                      <tr key={seg.num}>
-                        <td>
-                          <span className="seg-icon">{seg.num}</span>
+                {/* Segments Route Table */}
+                {m.segments && m.segments.length > 0 && (
+                  <table className="route-table">
+                    <thead>
+                      <tr>
+                        <th>#</th>
+                        <th>Segment</th>
+                        <th style={{ textAlign: 'right' }}>Distance</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {m.segments.map((seg, sIdx) => (
+                        <tr key={sIdx}>
+                          <td>
+                            <span className="seg-icon">{seg.num || sIdx + 1}</span>
+                          </td>
+                          <td>{seg.segment}</td>
+                          <td style={{ textAlign: 'right' }}>
+                            <span className="km-badge">{seg.distance}</span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                    <tfoot>
+                      <tr>
+                        <td colSpan={2}>
+                          <i className="fas fa-route"></i> TOTAL DISTANCE
                         </td>
-                        <td>{seg.segment}</td>
                         <td style={{ textAlign: 'right' }}>
-                          <span className="km-badge">{seg.distance}</span>
+                          <span className="total-km">{m.totalDist}</span>
                         </td>
                       </tr>
-                    ))}
-                  </tbody>
-                  <tfoot>
-                    <tr>
-                      <td colSpan={2}>
-                        <i className="fas fa-route"></i> TOTAL DISTANCE
-                      </td>
-                      <td style={{ textAlign: 'right' }}>
-                        <span className="total-km">{m.totalDist}</span>
-                      </td>
-                    </tr>
-                  </tfoot>
-                </table>
+                    </tfoot>
+                  </table>
+                )}
 
+                {/* Crew List Section */}
                 <div className="crew-list">
                   <strong>
                     <i className="fas fa-users"></i> Crew:
                   </strong>
-                  {m.crewIds?.map((cid) => {
-                    const member = members[cid];
-                    if (!member) return null;
-                    const isInactive = !member.active;
-
-                    return (
-                      <span
-                        key={cid}
-                        className={`crew-chip ${isInactive ? 'inactive-chip' : ''}`}
-                      >
+                  {m.crewIds && m.crewIds.length > 0 ? (
+                    m.crewIds.map((cid, cIdx) => (
+                      <span key={cIdx} className="crew-chip">
                         <span className="chip-photo">
-                          <img
-                            src={member.img}
-                            alt={member.name}
-                            onError={(e) => {
-                              (e.target as HTMLElement).style.display = 'none';
-                            }}
-                          />
+                          <span className="w-full h-full bg-[#1e1e1e] text-[#f9c74f] font-black text-[10px] flex items-center justify-center">
+                            {cid.charAt(0).toUpperCase()}
+                          </span>
                         </span>
-                        {member.name}
+                        {cid}
                       </span>
-                    );
-                  })}
+                    ))
+                  ) : (
+                    <span className="text-xs text-zinc-500 italic">Full group paceline</span>
+                  )}
+
                   {m.crewNote && (
                     <div className="crew-note">
                       <i className="fas fa-info-circle"></i> {m.crewNote}
@@ -454,75 +494,6 @@ export const MissionsView: React.FC = () => {
         </div>
       )}
 
-      {/* Mission Detail Modal */}
-      {selectedMission && (
-        <div
-          className="modal-overlay open"
-          onClick={(e) => {
-            if (e.target === e.currentTarget) setSelectedMission(null);
-          }}
-        >
-          <div className="modal max-w-lg">
-            <button
-              type="button"
-              className="modal-close"
-              onClick={() => setSelectedMission(null)}
-            >
-              <i className="fas fa-times"></i>
-            </button>
-
-            <div className="text-xs font-bold uppercase text-[#b45309] mb-1">
-              Mission Briefing
-            </div>
-            <h2 className="text-2xl font-bold mb-3">{selectedMission.title}</h2>
-
-            <div className="flex flex-wrap gap-2 mb-4">
-              <span className="role-badge MEMBER">
-                <i className="fas fa-road"></i> {selectedMission.distanceTargetKm} KM
-              </span>
-              <span className="role-badge ADMIN">
-                <i className="fas fa-tachometer-alt"></i> {selectedMission.difficulty}
-              </span>
-              {selectedMission.durationTargetHours && (
-                <span className="role-badge PUBLIC">
-                  <i className="fas fa-clock"></i> ~{selectedMission.durationTargetHours} HOURS
-                </span>
-              )}
-            </div>
-
-            <div className="text-sm text-zinc-800 leading-relaxed mb-4 whitespace-pre-line">
-              {selectedMission.description}
-            </div>
-
-            {selectedMission.rules && (
-              <div className="p-3.5 bg-zinc-100 border-2 border-zinc-900 rounded-2xl mb-4">
-                <div className="text-xs font-bold uppercase text-zinc-700 mb-1">
-                  <i className="fas fa-shield-alt text-[#b45309] mr-1"></i> Mission Rules &amp; Protocols
-                </div>
-                <div className="text-xs text-zinc-700 whitespace-pre-line">
-                  {selectedMission.rules}
-                </div>
-              </div>
-            )}
-
-            {selectedMission.rewardDescription && (
-              <div className="p-3 bg-amber-50 border border-amber-300 rounded-xl text-xs text-amber-900 font-bold mb-4 flex items-center gap-2">
-                <i className="fas fa-award text-amber-600 text-lg"></i>
-                <span>Reward: {selectedMission.rewardDescription}</span>
-              </div>
-            )}
-
-            <button
-              type="button"
-              onClick={() => setSelectedMission(null)}
-              className="w-full btn-secondary text-xs py-2"
-            >
-              Close Briefing
-            </button>
-          </div>
-        </div>
-      )}
-
       {/* Super Admin Create / Edit Mission Modal */}
       {modalOpen && (
         <div
@@ -530,200 +501,293 @@ export const MissionsView: React.FC = () => {
           onClick={(e) => {
             if (e.target === e.currentTarget) setModalOpen(false);
           }}
+          role="dialog"
+          aria-modal="true"
         >
-          <div className="modal max-w-lg">
+          <div className="modal max-w-2xl p-7 sm:p-9 border-3 border-[#1e1e1e] bg-white rounded-3xl shadow-[0_10px_0_#1e1e1e] max-h-[90vh] overflow-y-auto">
             <button
               type="button"
               className="modal-close"
               onClick={() => setModalOpen(false)}
+              aria-label="Close"
             >
               <i className="fas fa-times"></i>
             </button>
 
-            <h2 className="text-xl font-bold mb-4">
-              <i className="fas fa-flag-checkered text-[#b45309] mr-1"></i>{' '}
-              {editingMissionId ? 'Edit Mission' : 'Create Super Admin Mission'}
-            </h2>
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-12 h-12 rounded-2xl bg-[#1e1e1e] text-[#f9c74f] border-2 border-[#1e1e1e] flex items-center justify-center text-xl shadow-[0_3px_0_#1e1e1e]">
+                <i className="fas fa-flag-checkered"></i>
+              </div>
+              <div>
+                <h2 className="text-xl font-black text-zinc-900 tracking-tight">
+                  {editingMissionId ? 'Edit Mission Report' : 'Create New Mission Report'}
+                </h2>
+                <p className="text-xs text-zinc-600">
+                  Matches the authentic Cycle.exe report layout with segments and crew breakdown
+                </p>
+              </div>
+            </div>
 
             {formError && (
-              <div className="p-2.5 mb-3 bg-red-50 border border-red-500 rounded-xl text-xs text-red-700">
+              <div className="p-3 mb-4 bg-red-50 border-2 border-red-500 rounded-2xl text-xs font-bold text-red-700">
                 {formError}
               </div>
             )}
 
-            <form onSubmit={handleSaveMission} className="space-y-3">
-              <div>
-                <label className="block text-xs font-bold uppercase tracking-wider mb-1 text-zinc-700">
-                  Mission Title
-                </label>
-                <input
-                  type="text"
-                  required
-                  value={title}
-                  onChange={(e) => setTitle(e.target.value)}
-                  placeholder="e.g. Gazipur Night Sprint"
-                  className="neo-input text-sm py-2"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold uppercase tracking-wider mb-1 text-zinc-700">
-                  Description &amp; Route Summary
-                </label>
-                <textarea
-                  value={description}
-                  onChange={(e) => setDescription(e.target.value)}
-                  rows={3}
-                  placeholder="Detailed route itinerary, elevation, scenic checkpoints..."
-                  className="neo-input text-sm py-2 resize-none"
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
+            <form onSubmit={handleSaveMission} className="space-y-4">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <div>
-                  <label className="block text-xs font-bold uppercase tracking-wider mb-1 text-zinc-700">
-                    Distance Target (km)
-                  </label>
-                  <input
-                    type="number"
-                    value={distanceKm}
-                    onChange={(e) => setDistanceKm(e.target.value)}
-                    className="neo-input text-sm py-2"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-bold uppercase tracking-wider mb-1 text-zinc-700">
-                    Difficulty Level
-                  </label>
-                  <select
-                    value={difficulty}
-                    onChange={(e) => setDifficulty(e.target.value as any)}
-                    className="neo-input text-sm py-2"
-                  >
-                    <option value="EASY">EASY</option>
-                    <option value="MEDIUM">MEDIUM</option>
-                    <option value="HARD">HARD</option>
-                    <option value="EXTREME">EXTREME</option>
-                  </select>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-bold uppercase tracking-wider mb-1 text-zinc-700">
-                    Start Date
-                  </label>
-                  <input
-                    type="date"
-                    value={startDate}
-                    onChange={(e) => setStartDate(e.target.value)}
-                    className="neo-input text-sm py-2"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-bold uppercase tracking-wider mb-1 text-zinc-700">
-                    End Date
-                  </label>
-                  <input
-                    type="date"
-                    value={endDate}
-                    onChange={(e) => setEndDate(e.target.value)}
-                    className="neo-input text-sm py-2"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold uppercase tracking-wider mb-1 text-zinc-700">
-                  Safety Rules &amp; Equipment Requirements
-                </label>
-                <textarea
-                  value={rules}
-                  onChange={(e) => setRules(e.target.value)}
-                  rows={2}
-                  placeholder="Helmets required, front/rear lights for twilight rides..."
-                  className="neo-input text-sm py-2 resize-none"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold uppercase tracking-wider mb-1 text-zinc-700">
-                  Location / Route Itinerary
-                </label>
-                <input
-                  type="text"
-                  value={location}
-                  onChange={(e) => setLocation(e.target.value)}
-                  placeholder="e.g. Dhaka - Hatirjheel Outer Loop (Scenic Waterfront)"
-                  className="neo-input text-sm py-2"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold uppercase tracking-wider mb-1 text-zinc-700">
-                  Participation Instructions
-                </label>
-                <textarea
-                  value={instructions}
-                  onChange={(e) => setInstructions(e.target.value)}
-                  rows={2}
-                  placeholder="Meeting point at Rampura bridge, check bike tires, lights required for evening riders..."
-                  className="neo-input text-sm py-2 resize-none"
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-bold uppercase tracking-wider mb-1 text-zinc-700">
-                    Mission Status
-                  </label>
-                  <select
-                    value={status}
-                    onChange={(e) => setStatus(e.target.value as any)}
-                    className="neo-input text-sm py-2 font-bold"
-                  >
-                    <option value="COMING_SOON">Coming Soon</option>
-                    <option value="UPCOMING">Upcoming</option>
-                    <option value="ONGOING">Ongoing (Active Now)</option>
-                    <option value="ENDED">Ended</option>
-                    <option value="CANCELLED">Cancelled</option>
-                    <option value="DRAFT">Draft (Private)</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold uppercase tracking-wider mb-1 text-zinc-700">
-                    Finisher Reward
+                  <label className="block text-xs font-black uppercase tracking-wider mb-1 text-zinc-700">
+                    Mission # *
                   </label>
                   <input
                     type="text"
-                    value={reward}
-                    onChange={(e) => setReward(e.target.value)}
-                    placeholder="e.g. Gold Finisher Badge"
-                    className="neo-input text-sm py-2"
+                    required
+                    value={num}
+                    onChange={(e) => setNum(e.target.value)}
+                    placeholder="e.g. 004"
+                    className="neo-input text-sm w-full p-2.5 font-mono font-bold"
+                  />
+                </div>
+                <div className="sm:col-span-2">
+                  <label className="block text-xs font-black uppercase tracking-wider mb-1 text-zinc-700">
+                    Mission Name / Route Title *
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                    placeholder="e.g. Gazipur Scenic Bypass Sprint"
+                    className="neo-input text-sm w-full p-2.5 font-bold"
                   />
                 </div>
               </div>
 
-              <div className="flex justify-end gap-2 pt-2">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-black uppercase tracking-wider mb-1 text-zinc-700">
+                    Full Date
+                  </label>
+                  <input
+                    type="text"
+                    value={fullDate}
+                    onChange={(e) => setFullDate(e.target.value)}
+                    placeholder="e.g. 26 October 2026"
+                    className="neo-input text-sm w-full p-2.5"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-black uppercase tracking-wider mb-1 text-zinc-700">
+                    Ride Time
+                  </label>
+                  <input
+                    type="text"
+                    value={time}
+                    onChange={(e) => setTime(e.target.value)}
+                    placeholder="e.g. 3:30 PM · Finished 6:40 PM"
+                    className="neo-input text-sm w-full p-2.5"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div>
+                  <label className="block text-xs font-black uppercase tracking-wider mb-1 text-zinc-700">
+                    Duration
+                  </label>
+                  <input
+                    type="text"
+                    value={duration}
+                    onChange={(e) => setDuration(e.target.value)}
+                    placeholder="e.g. 3h 10m"
+                    className="neo-input text-sm w-full p-2.5"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-black uppercase tracking-wider mb-1 text-zinc-700">
+                    Avg Speed
+                  </label>
+                  <input
+                    type="text"
+                    value={avgSpeed}
+                    onChange={(e) => setAvgSpeed(e.target.value)}
+                    placeholder="e.g. ~12.4 km/h"
+                    className="neo-input text-sm w-full p-2.5"
+                  />
+                </div>
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="text-xs font-black uppercase tracking-wider text-zinc-700">
+                      Total Distance
+                    </label>
+                    <button
+                      type="button"
+                      onClick={calculateTotalDistance}
+                      className="text-[10px] font-bold text-amber-700 underline"
+                      title="Sum segments"
+                    >
+                      Sum
+                    </button>
+                  </div>
+                  <input
+                    type="text"
+                    value={totalDist}
+                    onChange={(e) => setTotalDist(e.target.value)}
+                    placeholder="e.g. 37.7 km"
+                    className="neo-input text-sm w-full p-2.5 font-bold"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div>
+                  <label className="block text-xs font-black uppercase tracking-wider mb-1 text-zinc-700">
+                    Style Variant
+                  </label>
+                  <select
+                    value={variant}
+                    onChange={(e) => setVariant(e.target.value as any)}
+                    className="neo-input text-sm w-full p-2.5 font-bold"
+                  >
+                    <option value="default">Default Yellow Accent</option>
+                    <option value="alt-accent">Orange Accent</option>
+                    <option value="green-accent">Green Accent</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-black uppercase tracking-wider mb-1 text-zinc-700">
+                    Header Icon
+                  </label>
+                  <select
+                    value={icon}
+                    onChange={(e) => setIcon(e.target.value)}
+                    className="neo-input text-sm w-full p-2.5 font-bold"
+                  >
+                    <option value="fa-map-signs">Map Signs (Default)</option>
+                    <option value="fa-industry">Industry / Out-and-Back</option>
+                    <option value="fa-bridge">Bridge</option>
+                    <option value="fa-bicycle">Bicycle</option>
+                    <option value="fa-flag">Checkered Flag</option>
+                    <option value="fa-mountain">Mountain</option>
+                  </select>
+                </div>
+                <div className="flex items-center gap-2 pt-6">
+                  <input
+                    type="checkbox"
+                    id="isDuoCheck"
+                    checked={isDuo}
+                    onChange={(e) => setIsDuo(e.target.checked)}
+                    className="w-4 h-4 rounded text-zinc-900"
+                  />
+                  <label htmlFor="isDuoCheck" className="text-xs font-bold text-zinc-800 cursor-pointer">
+                    Duo Ride Badge
+                  </label>
+                </div>
+              </div>
+
+              {/* Segments Section */}
+              <div className="pt-2 border-t border-zinc-200">
+                <div className="flex items-center justify-between mb-2">
+                  <label className="text-xs font-black uppercase tracking-wider text-zinc-700">
+                    Route Segments
+                  </label>
+                  <button
+                    type="button"
+                    onClick={handleAddSegment}
+                    className="text-xs font-black px-2.5 py-1 rounded-lg bg-zinc-100 hover:bg-[#f9c74f] text-zinc-900 border border-zinc-300 transition"
+                  >
+                    <i className="fas fa-plus mr-1"></i> Add Segment
+                  </button>
+                </div>
+
+                <div className="space-y-2">
+                  {segments.map((seg, idx) => (
+                    <div key={idx} className="flex items-center gap-2">
+                      <span className="w-6 h-6 rounded-full bg-zinc-200 text-zinc-800 text-xs font-black flex items-center justify-center shrink-0">
+                        {seg.num}
+                      </span>
+                      <input
+                        type="text"
+                        value={seg.segment}
+                        onChange={(e) => handleSegmentChange(idx, 'segment', e.target.value)}
+                        placeholder="e.g. Rajendrapur → Shimultoli"
+                        className="neo-input text-xs p-2 flex-1 font-medium"
+                      />
+                      <input
+                        type="text"
+                        value={seg.distance}
+                        onChange={(e) => handleSegmentChange(idx, 'distance', e.target.value)}
+                        placeholder="12.6 km"
+                        className="neo-input text-xs p-2 w-24 text-right font-bold"
+                      />
+                      {segments.length > 1 && (
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveSegment(idx)}
+                          className="text-xs text-red-500 hover:text-red-700 p-1"
+                          title="Remove segment"
+                        >
+                          <i className="fas fa-times"></i>
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Crew Members & Crew Note */}
+              <div className="pt-2 border-t border-zinc-200 space-y-3">
+                <div>
+                  <label className="block text-xs font-black uppercase tracking-wider mb-1 text-zinc-700">
+                    Crew Members (Comma-separated names)
+                  </label>
+                  <input
+                    type="text"
+                    value={crewNames}
+                    onChange={(e) => setCrewNames(e.target.value)}
+                    placeholder="e.g. Ananta, Joy, Borson, Sahal"
+                    className="neo-input text-sm w-full p-2.5"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-black uppercase tracking-wider mb-1 text-zinc-700">
+                    Crew Note / Expedition Context
+                  </label>
+                  <textarea
+                    rows={2}
+                    value={crewNote}
+                    onChange={(e) => setCrewNote(e.target.value)}
+                    placeholder="e.g. Adil has since become inactive and did not ride. Great weather."
+                    className="neo-input text-xs w-full p-2.5 resize-none"
+                  />
+                </div>
+              </div>
+
+              <div className="flex justify-end gap-2 pt-3 border-t border-zinc-200">
                 <button
                   type="button"
                   onClick={() => setModalOpen(false)}
-                  className="btn-secondary text-xs py-2 px-4"
+                  className="btn-secondary py-2.5 px-4 text-xs font-bold"
+                  disabled={saving}
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
                   disabled={saving}
-                  className="btn-primary text-xs py-2 px-5 font-bold"
+                  className="btn-primary py-2.5 px-6 text-xs font-black flex items-center gap-2"
                 >
                   {saving ? (
-                    <i className="fas fa-spinner fa-spin"></i>
+                    <>
+                      <i className="fas fa-spinner fa-spin"></i> Saving Mission...
+                    </>
                   ) : (
-                    <i className="fas fa-save"></i>
-                  )}{' '}
-                  Save Mission
+                    <>
+                      <i className="fas fa-save"></i> Save Mission Report
+                    </>
+                  )}
                 </button>
               </div>
             </form>
