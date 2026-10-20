@@ -692,6 +692,256 @@ app.post('/api/admin/roles', (req: Request, res: Response) => {
   });
 });
 
+// 10. Send Direct Custom Notice to User (SUPER ADMIN ONLY)
+app.post('/api/admin/send-notice', async (req: Request, res: Response) => {
+  const { uid, email, role } = getAuthFromReq(req);
+  const { recipientId, title, message, isUrgent } = req.body;
+
+  const isOwner =
+    uid === DESIGNATED_SUPER_ADMIN_UID ||
+    role === 'SUPER_ADMIN' ||
+    email === DESIGNATED_SUPER_ADMIN_EMAIL.toLowerCase();
+
+  if (!isOwner) {
+    return res.status(403).json({
+      error: 'Forbidden: Only the Super Admin can send direct custom notices to users',
+    });
+  }
+
+  if (!recipientId || typeof recipientId !== 'string') {
+    return res.status(400).json({ error: 'Recipient user ID is required' });
+  }
+
+  if (!message || typeof message !== 'string' || !message.trim()) {
+    return res.status(400).json({ error: 'Message content cannot be empty' });
+  }
+
+  try {
+    // Look up recipient user info
+    let recipientName = 'Rider';
+    let recipientEmail = '';
+    try {
+      const userSnap = await serverGetDoc(serverDoc(serverDb, 'users', recipientId));
+      if (userSnap.exists()) {
+        const udata = userSnap.data();
+        recipientName = udata.displayName || 'Rider';
+        recipientEmail = udata.email || '';
+      }
+    } catch (e) {
+      console.warn('[Cycle.exe Server] Could not fetch user data for notice:', e);
+    }
+
+    const noticeId = `notice_${Date.now()}_${crypto.randomBytes(3).toString('hex')}`;
+    const now = new Date().toISOString();
+
+    const noticeDoc = {
+      id: noticeId,
+      recipientId,
+      recipientName,
+      recipientEmail,
+      senderId: uid || DESIGNATED_SUPER_ADMIN_UID,
+      senderName: 'Super Admin (Owner)',
+      senderEmail: email || DESIGNATED_SUPER_ADMIN_EMAIL,
+      senderRole: 'SUPER_ADMIN',
+      type: 'DIRECT_NOTICE',
+      isDirectNotice: true,
+      title: (title || 'Official Notice from Super Admin').trim().substring(0, 120),
+      message: message.trim().substring(0, 2000),
+      isUrgent: !!isUrgent,
+      deliveryStatus: 'DELIVERED',
+      deliveredAt: now,
+      isRead: false,
+      readAt: null,
+      replies: [],
+      replyCount: 0,
+      createdAt: now,
+      updatedAt: now,
+    };
+
+    await serverSetDoc(serverDoc(serverDb, 'notifications', noticeId), noticeDoc);
+
+    addAuditLog(
+      uid,
+      email,
+      'SEND_DIRECT_NOTICE',
+      'USER',
+      recipientId,
+      `Sent direct notice "${noticeDoc.title}" to ${recipientName} (${recipientEmail || recipientId})`
+    );
+
+    return res.json({
+      success: true,
+      noticeId,
+      notice: noticeDoc,
+      message: `Notice successfully delivered to ${recipientName}`,
+    });
+  } catch (err) {
+    console.error('[Cycle.exe Server] Error sending notice:', err);
+    return res.status(500).json({
+      error: 'Failed to send notice',
+      details: err instanceof Error ? err.message : String(err),
+    });
+  }
+});
+
+// 11. Reply to Notice (Recipient User or Super Admin)
+app.post('/api/notices/reply', async (req: Request, res: Response) => {
+  const { uid, email, role } = getAuthFromReq(req);
+  const { noticeId, text } = req.body;
+
+  if (!uid || !email) {
+    return res.status(401).json({ error: 'Authentication required to reply to notice' });
+  }
+
+  if (!noticeId || typeof noticeId !== 'string') {
+    return res.status(400).json({ error: 'Notice ID is required' });
+  }
+
+  if (!text || typeof text !== 'string' || !text.trim()) {
+    return res.status(400).json({ error: 'Reply text cannot be empty' });
+  }
+
+  try {
+    const noticeRef = serverDoc(serverDb, 'notifications', noticeId);
+    const snap = await serverGetDoc(noticeRef);
+
+    if (!snap.exists()) {
+      return res.status(404).json({ error: 'Notice not found' });
+    }
+
+    const data = snap.data();
+    const isRecipient = data.recipientId === uid;
+    const isOwner =
+      uid === DESIGNATED_SUPER_ADMIN_UID ||
+      role === 'SUPER_ADMIN' ||
+      email === DESIGNATED_SUPER_ADMIN_EMAIL.toLowerCase();
+
+    if (!isRecipient && !isOwner) {
+      return res.status(403).json({
+        error: 'Forbidden: You are not authorized to reply to this notice',
+      });
+    }
+
+    // Get sender display name
+    let senderName = isOwner ? 'Super Admin (Owner)' : 'Rider';
+    try {
+      const userSnap = await serverGetDoc(serverDoc(serverDb, 'users', uid));
+      if (userSnap.exists()) {
+        senderName = userSnap.data().displayName || senderName;
+      }
+    } catch {}
+
+    const now = new Date().toISOString();
+    const newReply = {
+      id: `rep_${Date.now()}_${crypto.randomBytes(2).toString('hex')}`,
+      senderId: uid,
+      senderName,
+      senderEmail: email,
+      senderRole: isOwner ? 'SUPER_ADMIN' : role,
+      text: text.trim().substring(0, 1000),
+      createdAt: now,
+    };
+
+    const existingReplies = Array.isArray(data.replies) ? data.replies : [];
+    const updatedReplies = [...existingReplies, newReply];
+
+    await serverSetDoc(
+      noticeRef,
+      {
+        replies: updatedReplies,
+        replyCount: updatedReplies.length,
+        lastRepliedAt: now,
+        hasNewReply: true,
+        updatedAt: now,
+      },
+      { merge: true }
+    );
+
+    // If user replied, notify Super Admin
+    if (!isOwner) {
+      const notifId = `notif_${Date.now()}_${crypto.randomBytes(2).toString('hex')}`;
+      await serverSetDoc(
+        serverDoc(serverDb, 'notifications', notifId),
+        {
+          id: notifId,
+          recipientId: 'SUPER_ADMIN',
+          type: 'SYSTEM',
+          title: `💬 Reply from ${senderName}`,
+          message: `Re: "${data.title || 'Notice'}": ${newReply.text.substring(0, 140)}`,
+          link: noticeId,
+          isRead: false,
+          createdAt: now,
+        },
+        { merge: true }
+      );
+    }
+
+    return res.json({
+      success: true,
+      reply: newReply,
+      message: 'Reply sent successfully',
+    });
+  } catch (err) {
+    console.error('[Cycle.exe Server] Error replying to notice:', err);
+    return res.status(500).json({
+      error: 'Failed to send reply',
+      details: err instanceof Error ? err.message : String(err),
+    });
+  }
+});
+
+// 12. Mark Notice as Read & Update Delivery Status
+app.post('/api/notices/mark-read', async (req: Request, res: Response) => {
+  const { uid } = getAuthFromReq(req);
+  const { noticeId } = req.body;
+
+  if (!uid) {
+    return res.status(401).json({ error: 'Authentication required' });
+  }
+
+  if (!noticeId || typeof noticeId !== 'string') {
+    return res.status(400).json({ error: 'Notice ID is required' });
+  }
+
+  try {
+    const noticeRef = serverDoc(serverDb, 'notifications', noticeId);
+    const snap = await serverGetDoc(noticeRef);
+
+    if (!snap.exists()) {
+      return res.status(404).json({ error: 'Notice not found' });
+    }
+
+    const data = snap.data();
+    if (data.recipientId !== uid && uid !== DESIGNATED_SUPER_ADMIN_UID) {
+      return res.status(403).json({ error: 'Unauthorized to mark this notice as read' });
+    }
+
+    const now = new Date().toISOString();
+    await serverSetDoc(
+      noticeRef,
+      {
+        isRead: true,
+        readAt: data.readAt || now,
+        deliveryStatus: 'READ',
+        updatedAt: now,
+      },
+      { merge: true }
+    );
+
+    return res.json({
+      success: true,
+      readAt: data.readAt || now,
+      deliveryStatus: 'READ',
+    });
+  } catch (err) {
+    console.error('[Cycle.exe Server] Error marking notice read:', err);
+    return res.status(500).json({
+      error: 'Failed to update read status',
+      details: err instanceof Error ? err.message : String(err),
+    });
+  }
+});
+
 // -------------------------------------------------------------
 // Vite Dev Server / Static File Serving
 // -------------------------------------------------------------

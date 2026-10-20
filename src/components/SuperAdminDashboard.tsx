@@ -20,6 +20,7 @@ import {
   Member,
 } from '../types';
 import { uploadImage } from '../utils/imageUpload';
+import { SuperAdminNoticesPanel } from './SuperAdminNoticesPanel';
 
 export const SuperAdminDashboard: React.FC = () => {
   const { user, isSuperAdmin, role } = useAuth();
@@ -28,6 +29,10 @@ export const SuperAdminDashboard: React.FC = () => {
   const [allUsers, setAllUsers] = useState<UserProfile[]>([]);
   const [userSearch, setUserSearch] = useState('');
   const [loadingUsers, setLoadingUsers] = useState(true);
+
+  // Direct Notices modal / target user state
+  const [noticeTargetUser, setNoticeTargetUser] = useState<UserProfile | null>(null);
+  const [isNoticeComposerOpen, setIsNoticeComposerOpen] = useState(false);
 
   // User Profile Inspection Modal (Requirement 6)
   const [inspectingUser, setInspectingUser] = useState<UserProfile | null>(null);
@@ -79,7 +84,7 @@ export const SuperAdminDashboard: React.FC = () => {
 
   // Active sub-tab in Super Admin view
   const [adminTab, setAdminTab] = useState<
-    'featured' | 'users' | 'analytics' | 'invitations' | 'applications' | 'audit'
+    'featured' | 'users' | 'notices' | 'analytics' | 'invitations' | 'applications' | 'audit'
   >('featured');
 
   // 1. Fetch real users from Firestore
@@ -817,6 +822,16 @@ export const SuperAdminDashboard: React.FC = () => {
             </button>
             <button
               type="button"
+              onClick={() => setAdminTab('notices')}
+              className={`text-xs sm:text-sm font-bold py-2 px-4 rounded-full transition flex items-center gap-1.5 ${
+                adminTab === 'notices' ? 'bg-[#1e1e1e] text-[#f9c74f]' : 'text-zinc-700 hover:bg-zinc-100'
+              }`}
+            >
+              <i className="fas fa-paper-plane text-amber-400"></i>
+              <span>Direct Notices</span>
+            </button>
+            <button
+              type="button"
               onClick={() => setAdminTab('analytics')}
               className={`text-xs font-bold py-1.5 px-3.5 rounded-full transition flex items-center gap-1.5 ${
                 adminTab === 'analytics' ? 'bg-[#1e1e1e] text-[#f9c74f]' : 'text-zinc-700 hover:bg-zinc-100'
@@ -1519,6 +1534,19 @@ export const SuperAdminDashboard: React.FC = () => {
                               <i className="fas fa-eye text-amber-600"></i>
                             </button>
 
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setNoticeTargetUser(u);
+                                setIsNoticeComposerOpen(true);
+                              }}
+                              title={`Send Direct Notice to ${u.displayName}`}
+                              className="px-2 py-1 rounded-lg border border-zinc-900 bg-[#f9c74f] hover:bg-amber-400 text-xs font-bold flex items-center gap-1 shadow-sm text-zinc-900"
+                            >
+                              <i className="fas fa-paper-plane text-[10px]"></i>
+                              <span className="hidden xl:inline">Notice</span>
+                            </button>
+
                             <select
                               value={u.role}
                               onChange={(e) => handleChangeRole(u, e.target.value)}
@@ -1808,6 +1836,24 @@ export const SuperAdminDashboard: React.FC = () => {
         </div>
       )}
 
+      {/* TAB: DIRECT NOTICES & DELIVERY/READ TRACKER */}
+      {adminTab === 'notices' && (
+        <SuperAdminNoticesPanel
+          allUsers={allUsers}
+          targetUserForNotice={noticeTargetUser}
+          onClearTargetUser={() => setNoticeTargetUser(null)}
+          isComposerOpen={isNoticeComposerOpen}
+          onOpenComposer={(target) => {
+            if (target) setNoticeTargetUser(target);
+            setIsNoticeComposerOpen(true);
+          }}
+          onCloseComposer={() => {
+            setIsNoticeComposerOpen(false);
+            setNoticeTargetUser(null);
+          }}
+        />
+      )}
+
       {/* Super Admin Title Editor Modal */}
       {editingTitleUser && (
         <div className="modal-overlay open" role="dialog" aria-modal="true">
@@ -2013,6 +2059,22 @@ export const SuperAdminDashboard: React.FC = () => {
                   </button>
                 </div>
               )}
+
+              <div className="pt-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const target = inspectingUser;
+                    setInspectingUser(null);
+                    setNoticeTargetUser(target);
+                    setIsNoticeComposerOpen(true);
+                  }}
+                  className="w-full py-2 px-4 text-xs font-black flex items-center justify-center gap-2 bg-[#f9c74f] text-[#1e1e1e] border-2 border-[#1e1e1e] rounded-xl shadow-[0_3px_0_#1e1e1e] hover:bg-amber-400 transition cursor-pointer"
+                >
+                  <i className="fas fa-paper-plane"></i>
+                  <span>Send Direct Notice to {inspectingUser.displayName}</span>
+                </button>
+              </div>
             </div>
           </div>
         </div>

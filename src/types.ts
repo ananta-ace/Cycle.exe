@@ -103,16 +103,35 @@ export interface GalleryPhoto {
   uploadedAt: string;
 }
 
+export interface NoticeReply {
+  id: string;
+  senderId: string;
+  senderName: string;
+  senderEmail?: string;
+  senderRole?: UserRole | string;
+  senderPhotoURL?: string;
+  text: string;
+  createdAt: string;
+}
+
 export interface AppNotification {
   id: string;
-  recipientId: string; // user UID or 'SUPER_ADMIN' or 'ADMINS'
+  recipientId: string; // user UID or 'SUPER_ADMIN' or 'ADMINS' or 'ALL_ADMINS'
+  recipientName?: string;
+  recipientEmail?: string;
+  senderId?: string;
+  senderName?: string;
+  senderEmail?: string;
+  senderRole?: string;
+  senderPhotoURL?: string;
   type:
     | 'APPLICATION_SUBMITTED'
     | 'APPLICATION_APPROVED'
     | 'APPLICATION_REJECTED'
     | 'STATUS_CHANGED'
     | 'NEW_RATING'
-    | 'SYSTEM';
+    | 'SYSTEM'
+    | 'DIRECT_NOTICE';
   title: string;
   message: string;
   link?: string;
@@ -120,7 +139,17 @@ export interface AppNotification {
   applicantName?: string;
   applicantPhotoURL?: string;
   isRead: boolean;
+  readAt?: string | null;
+  deliveryStatus?: 'DELIVERED' | 'READ';
+  deliveredAt?: string;
+  isDirectNotice?: boolean;
+  isUrgent?: boolean;
+  replies?: NoticeReply[];
+  replyCount?: number;
+  lastRepliedAt?: string;
+  hasNewReply?: boolean;
   createdAt: string;
+  updatedAt?: string;
 }
 
 export interface MissionSegment {

@@ -166,8 +166,22 @@ service cloud.firestore {
         resource.data.recipientId == request.auth.uid ||
         resource.data.recipientId == 'SUPER_ADMIN' ||
         resource.data.recipientId == 'ADMINS' ||
+        resource.data.recipientId == 'ALL_ADMINS' ||
+        resource.data.senderId == request.auth.uid ||
         isSuperAdmin()
-      ) && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['isRead']);
+      ) && (
+        isSuperAdmin() ||
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'isRead',
+          'readAt',
+          'deliveryStatus',
+          'replies',
+          'replyCount',
+          'lastRepliedAt',
+          'hasNewReply',
+          'updatedAt'
+        ])
+      );
 
       allow delete: if isSuperAdmin() || (isSignedIn() && resource.data.recipientId == request.auth.uid);
     }
