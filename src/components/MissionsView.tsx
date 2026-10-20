@@ -7,6 +7,7 @@ import {
   addDoc,
   updateDoc,
   deleteDoc,
+  deleteField,
   doc,
   getDocs,
 } from 'firebase/firestore';
@@ -267,7 +268,7 @@ export const MissionsView: React.FC = () => {
       const last = prev[prev.length - 1];
       const nextNum = prev.length + 1;
       // Default the next 'from' to the previous segment's 'to'
-      const nextFrom = last?.to || 'Intermediate Point';
+      const nextFrom = last?.to || '';
       const updated = [...prev, { num: nextNum, from: nextFrom, to: '', distance: '' }];
       recalcDistance(updated);
       return updated;
@@ -340,9 +341,9 @@ export const MissionsView: React.FC = () => {
 
     setStartTime('03:30 PM');
     setEndTime('06:30 PM');
-    setDuration('3h 00m');
-    setAvgSpeed('~12.0 km/h');
-    setTotalDist('32.6 km');
+    setDuration('');
+    setAvgSpeed('');
+    setTotalDist('');
     setVariant('default');
     setCustomColor('#7c3aed');
     setIcon('fa-map-signs');
@@ -350,8 +351,7 @@ export const MissionsView: React.FC = () => {
     setSelectedCrew(['Ananta', 'Joy', 'Borson', 'Sahal']);
     setNotes('');
     setSegments([
-      { num: 1, from: 'Rajendrapur', to: 'Shimultoli', distance: '12.6 km' },
-      { num: 2, from: 'Shimultoli', to: 'Paglar Ban', distance: '20.0 km' },
+      { num: 1, from: '', to: '', distance: '' },
     ]);
     setFormError(null);
     setCrewDropdownOpen(false);
@@ -436,7 +436,7 @@ export const MissionsView: React.FC = () => {
       setSegments(parsedSegments);
     } else {
       setSegments([
-        { num: 1, from: m.startLocation || 'Rajendrapur', to: m.destination || 'Paglar Ban', distance: m.totalDist || '37.7 km' },
+        { num: 1, from: m.startLocation || '', to: m.destination || '', distance: m.totalDist || '' },
       ]);
     }
 
@@ -475,7 +475,7 @@ export const MissionsView: React.FC = () => {
           const m = s.distance.match(/([0-9.]+)/);
           if (m) sum += parseFloat(m[1]);
         });
-        currentTotalDist = sum > 0 ? `${sum.toFixed(1)} km` : '35.0 km';
+        currentTotalDist = sum > 0 ? `${sum.toFixed(1)} km` : '';
       }
 
       // Format date displays
@@ -485,7 +485,7 @@ export const MissionsView: React.FC = () => {
       const timeDisplay =
         startTime.trim() && endTime.trim()
           ? `${startTime.trim()} · Finished ${endTime.trim()}`
-          : startTime.trim() || endTime.trim() || '3:30 PM · Finished 6:40 PM';
+          : startTime.trim() || endTime.trim() || '';
 
       // Build structured segments with from, to, distance, and segment summary
       const formattedSegments: MissionSegment[] = segments
@@ -494,15 +494,15 @@ export const MissionsView: React.FC = () => {
           num: idx + 1,
           from: s.from.trim(),
           to: s.to.trim(),
-          distance: s.distance.trim() || '10.0 km',
+          distance: s.distance.trim() || '',
           segment: s.from.trim() && s.to.trim() ? `${s.from.trim()} → ${s.to.trim()}` : s.from.trim() || s.to.trim() || `Segment ${idx + 1}`,
         }));
 
-      // Infer overall start location and destination from segments
-      const derivedStart = formattedSegments[0]?.from || 'Rajendrapur';
-      const derivedDest = formattedSegments[formattedSegments.length - 1]?.to || 'Paglar Ban';
+      // Infer overall start location and destination from segments if provided
+      const derivedStart = formattedSegments[0]?.from || '';
+      const derivedDest = formattedSegments[formattedSegments.length - 1]?.to || '';
 
-      const missionPayload: Omit<MissionReport, 'id'> = {
+      const missionPayload: Record<string, any> = {
         num: missionTag.trim() || '001',
         tag: missionTag.trim() || '001',
         name: missionTitle.trim(),
@@ -513,12 +513,12 @@ export const MissionsView: React.FC = () => {
         time: timeDisplay,
         fullDate: fullDate || date.trim(),
         shortDate: shortDate || date.trim(),
-        duration: duration.trim() || '3h 10m',
-        avgSpeed: avgSpeed.trim() || '~12.0 km/h',
+        duration: duration.trim(),
+        avgSpeed: avgSpeed.trim(),
         totalDist: currentTotalDist,
         startLocation: derivedStart,
         destination: derivedDest,
-        location: `${derivedStart} to ${derivedDest}`,
+        location: derivedStart && derivedDest ? `${derivedStart} to ${derivedDest}` : (derivedStart || derivedDest || ''),
         segments: formattedSegments,
         crewIds: selectedCrew,
         crewNote: notes.trim(),
@@ -526,20 +526,31 @@ export const MissionsView: React.FC = () => {
         disclaimer: notes.trim(),
         icon: icon.trim() || 'fa-map-signs',
         variant,
-        customColor: variant === 'custom' ? customColor : undefined,
         isDuo,
         status: 'PUBLISHED',
         createdBy: user?.uid || 'super-admin',
         updatedAt: new Date().toISOString(),
-        createdAt: editingMissionId
-          ? missions.find((m) => m.id === editingMissionId)?.createdAt || new Date().toISOString()
-          : new Date().toISOString(),
       };
 
+      if (variant === 'custom') {
+        missionPayload.customColor = customColor;
+      } else if (editingMissionId) {
+        missionPayload.customColor = deleteField();
+      }
+
+      // Ensure no undefined values exist in payload
+      const sanitizedPayload: Record<string, any> = {};
+      for (const [key, value] of Object.entries(missionPayload)) {
+        if (value !== undefined) {
+          sanitizedPayload[key] = value;
+        }
+      }
+
       if (editingMissionId) {
-        await updateDoc(doc(db, 'missions', editingMissionId), missionPayload);
+        await updateDoc(doc(db, 'missions', editingMissionId), sanitizedPayload);
       } else {
-        await addDoc(collection(db, 'missions'), missionPayload);
+        sanitizedPayload.createdAt = new Date().toISOString();
+        await addDoc(collection(db, 'missions'), sanitizedPayload);
       }
 
       setModalOpen(false);
@@ -721,8 +732,6 @@ export const MissionsView: React.FC = () => {
                 }
               : {};
 
-            const startLoc = m.startLocation || (m.segments && m.segments[0]?.from) || '';
-            const destLoc = m.destination || (m.segments && m.segments[m.segments.length - 1]?.to) || '';
             const missionTagDisplay = m.tag || m.num || '001';
             const missionNotes = m.notes || m.crewNote || m.disclaimer || '';
 
@@ -769,29 +778,6 @@ export const MissionsView: React.FC = () => {
                     </span>
                   )}
                 </h2>
-
-                {/* Starting Location & Destination Route Journey */}
-                {(startLoc || destLoc) && (
-                  <div
-                    className="inline-flex items-center gap-2.5 px-4 py-2 rounded-2xl border-2 font-bold text-xs sm:text-sm mb-3 shadow-[0_2px_0_#d6d2ca] flex-wrap"
-                    style={{
-                      backgroundColor: isCustom ? `${cColor}12` : '#f6f3ee',
-                      borderColor: isCustom ? cColor : '#1e1e1e',
-                    }}
-                  >
-                    <span className="flex items-center gap-1.5 font-black text-zinc-900">
-                      <i className="fas fa-map-marker-alt text-rose-600"></i>
-                      <span>{startLoc || 'Start Location'}</span>
-                    </span>
-                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-zinc-200/80 text-[10px] font-black text-zinc-600 uppercase">
-                      to
-                    </span>
-                    <span className="flex items-center gap-1.5 font-black text-zinc-900">
-                      <i className="fas fa-flag-checkered text-emerald-600"></i>
-                      <span>{destLoc || 'Destination'}</span>
-                    </span>
-                  </div>
-                )}
 
                 <div className="report-meta">
                   {(m.fullDate || m.date || m.shortDate) && (
