@@ -154,6 +154,8 @@ export interface AppNotification {
 
 export interface MissionSegment {
   num: number;
+  from?: string;
+  to?: string;
   segment: string;
   distance: string;
 }
@@ -161,10 +163,14 @@ export interface MissionSegment {
 export interface MissionReport {
   id: string;
   num?: string;
+  tag?: string;
   name?: string;
   title: string;
   coverPhoto?: string;
   description?: string;
+  date?: string;
+  startTime?: string;
+  endTime?: string;
   shortDate?: string;
   fullDate?: string;
   startDate?: string;
@@ -180,14 +186,19 @@ export interface MissionReport {
   rewardDescription?: string;
   icon?: string;
   cls?: string;
-  variant?: 'alt-accent' | 'green-accent' | 'default';
+  variant?: 'alt-accent' | 'green-accent' | 'default' | 'custom';
+  customColor?: string;
   isDuo?: boolean;
   status: 'COMING_SOON' | 'UPCOMING' | 'ONGOING' | 'ENDED' | 'CANCELLED' | 'DRAFT' | 'PUBLISHED';
   location?: string;
+  startLocation?: string;
+  destination?: string;
   instructions?: string;
   segments?: MissionSegment[];
   crewIds?: string[];
   crewNote?: string;
+  notes?: string;
+  disclaimer?: string;
   createdBy?: string;
   createdAt?: string;
   updatedAt?: string;

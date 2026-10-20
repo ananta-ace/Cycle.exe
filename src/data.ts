@@ -87,6 +87,8 @@ export const missionMetaList: MissionReport[] = [
     icon: 'fa-map-signs',
     cls: 'm1',
     variant: 'default',
+    startLocation: 'Rajendrapur',
+    destination: 'Paglar Ban',
     segments: [
       { num: 1, segment: 'Rajendrapur → Shimultoli', distance: '12.6 km' },
       { num: 2, segment: 'Shimultoli → Joydebpur', distance: '6.1 km' },
@@ -111,6 +113,8 @@ export const missionMetaList: MissionReport[] = [
     icon: 'fa-industry',
     cls: 'm2',
     variant: 'alt-accent',
+    startLocation: 'Nestlé',
+    destination: 'Nourish Poultry & Hatchery Ltd.',
     segments: [
       { num: 1, segment: 'Nestlé → Nourish Poultry & Hatchery Ltd.', distance: '16.0 km' },
       { num: 2, segment: 'Nourish Poultry & Hatchery Ltd. → Nestlé', distance: '16.0 km' },
@@ -134,6 +138,8 @@ export const missionMetaList: MissionReport[] = [
     cls: 'm3',
     variant: 'green-accent',
     isDuo: true,
+    startLocation: 'Rajendrapur',
+    destination: 'Bhakowadi Orphanage Bridge',
     segments: [
       { num: 1, segment: 'Rajendrapur → Bhakowadi Orphanage Bridge', distance: '17.0 km' },
       { num: 2, segment: 'Bhakowadi Orphanage Bridge → Rajendrapur', distance: '17.0 km' },
