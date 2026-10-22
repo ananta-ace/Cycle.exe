@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
 import { TabType, Member } from './types';
-import { galleryData } from './data';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { Navbar } from './components/Navbar';
 import { Footer } from './components/Footer';
@@ -8,7 +7,6 @@ import { MembersView } from './components/MembersView';
 import { MemberModal } from './components/MemberModal';
 import { MissionsView } from './components/MissionsView';
 import { GalleryView } from './components/GalleryView';
-import { LightboxModal } from './components/LightboxModal';
 import { CommunityFeed } from './components/CommunityFeed';
 import { ProfileView } from './components/ProfileView';
 import { AdminDashboard } from './components/AdminDashboard';
@@ -40,7 +38,6 @@ const MainContent: React.FC = () => {
   });
 
   const [selectedMember, setSelectedMember] = useState<Member | null>(null);
-  const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
   const [authModalOpen, setAuthModalOpen] = useState(false);
   const [applyModalOpen, setApplyModalOpen] = useState(false);
   const [notificationsDrawerOpen, setNotificationsDrawerOpen] = useState(false);
@@ -148,9 +145,7 @@ const MainContent: React.FC = () => {
         )}
         {activeTab === 'community' && <CommunityFeed />}
         {activeTab === 'missions' && <MissionsView />}
-        {activeTab === 'gallery' && (
-          <GalleryView onOpenLightbox={(idx) => setLightboxIndex(idx)} />
-        )}
+        {activeTab === 'gallery' && <GalleryView />}
         {activeTab === 'profile' && <ProfileView />}
         {activeTab === 'admin' && isAdmin && <AdminDashboard />}
         {activeTab === 'superadmin' && isSuperAdmin && <SuperAdminDashboard />}
@@ -163,13 +158,6 @@ const MainContent: React.FC = () => {
       <MemberModal
         member={selectedMember}
         onClose={() => setSelectedMember(null)}
-      />
-
-      <LightboxModal
-        items={galleryData}
-        currentIndex={lightboxIndex}
-        onClose={() => setLightboxIndex(null)}
-        onNavigate={(newIdx) => setLightboxIndex(newIdx)}
       />
 
       <AuthModal

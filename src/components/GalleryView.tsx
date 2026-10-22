@@ -13,11 +13,7 @@ import { useAuth } from '../context/AuthContext';
 import { GalleryPhoto } from '../types';
 import { uploadImage } from '../utils/imageUpload';
 
-interface GalleryViewProps {
-  onOpenLightbox?: (index: number) => void;
-}
-
-export const GalleryView: React.FC<GalleryViewProps> = ({ onOpenLightbox }) => {
+export const GalleryView: React.FC = () => {
   const { isSuperAdmin, user, profile } = useAuth();
   const [photos, setPhotos] = useState<GalleryPhoto[]>([]);
   const [loading, setLoading] = useState(true);
@@ -32,8 +28,53 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ onOpenLightbox }) => {
   const [uploadProgress, setUploadProgress] = useState<number | null>(null);
   const [uploadError, setUploadError] = useState<string | null>(null);
 
-  // Active full view photo for lightbox
-  const [activePhoto, setActivePhoto] = useState<GalleryPhoto | null>(null);
+  // Active photo index for full-screen lightbox
+  const [activePhotoIndex, setActivePhotoIndex] = useState<number | null>(null);
+
+  const activePhoto =
+    activePhotoIndex !== null && activePhotoIndex >= 0 && activePhotoIndex < photos.length
+      ? photos[activePhotoIndex]
+      : null;
+
+  const handleNextPhoto = (e?: React.MouseEvent) => {
+    e?.stopPropagation();
+    if (photos.length === 0 || activePhotoIndex === null) return;
+    setActivePhotoIndex((prev) => ((prev ?? 0) + 1) % photos.length);
+  };
+
+  const handlePrevPhoto = (e?: React.MouseEvent) => {
+    e?.stopPropagation();
+    if (photos.length === 0 || activePhotoIndex === null) return;
+    setActivePhotoIndex((prev) => ((prev ?? 0) - 1 + photos.length) % photos.length);
+  };
+
+  // Keyboard navigation & body scroll lock for lightbox
+  useEffect(() => {
+    if (activePhotoIndex === null) return;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setActivePhotoIndex(null);
+      } else if (e.key === 'ArrowLeft') {
+        if (photos.length > 0) {
+          setActivePhotoIndex((prev) => ((prev ?? 0) - 1 + photos.length) % photos.length);
+        }
+      } else if (e.key === 'ArrowRight') {
+        if (photos.length > 0) {
+          setActivePhotoIndex((prev) => ((prev ?? 0) + 1) % photos.length);
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      document.body.style.overflow = prevOverflow;
+    };
+  }, [activePhotoIndex, photos.length]);
 
   useEffect(() => {
     const q = query(collection(db, 'gallery'), orderBy('uploadedAt', 'desc'));
@@ -198,16 +239,14 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ onOpenLightbox }) => {
               key={item.id}
               className="gallery-item group relative"
               onClick={() => {
-                setActivePhoto(item);
-                onOpenLightbox?.(index);
+                setActivePhotoIndex(index);
               }}
               role="button"
               tabIndex={0}
               onKeyDown={(e) => {
                 if (e.key === 'Enter' || e.key === ' ') {
                   e.preventDefault();
-                  setActivePhoto(item);
-                  onOpenLightbox?.(index);
+                  setActivePhotoIndex(index);
                 }
               }}
             >
@@ -258,46 +297,86 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ onOpenLightbox }) => {
         </div>
       )}
 
-      {/* Larger View Modal (Lightbox) */}
-      {activePhoto && (
+      {/* Full-featured Lightbox Modal for Real Gallery Photos */}
+      {activePhoto && activePhotoIndex !== null && (
         <div
-          className="modal-overlay open"
-          onClick={() => setActivePhoto(null)}
+          className="lightbox open"
+          onClick={() => setActivePhotoIndex(null)}
           role="dialog"
           aria-modal="true"
+          aria-label="Photo lightbox"
         >
-          <div
-            className="modal max-w-4xl p-4 border-4 border-[#1e1e1e] bg-white rounded-3xl shadow-[0_12px_0_#1e1e1e]"
-            onClick={(e) => e.stopPropagation()}
+          <button
+            type="button"
+            className="lightbox-close"
+            onClick={() => setActivePhotoIndex(null)}
+            aria-label="Close lightbox"
           >
-            <button
-              type="button"
-              className="modal-close"
-              onClick={() => setActivePhoto(null)}
-              aria-label="Close"
-            >
-              <i className="fas fa-times"></i>
-            </button>
+            <i className="fas fa-times"></i>
+          </button>
 
-            <div className="max-h-[70vh] rounded-2xl overflow-hidden bg-black flex items-center justify-center border-2 border-zinc-900">
+          {photos.length > 1 && (
+            <>
+              <button
+                type="button"
+                className="lightbox-nav prev"
+                onClick={handlePrevPhoto}
+                aria-label="Previous photo"
+              >
+                <i className="fas fa-chevron-left"></i>
+              </button>
+
+              <button
+                type="button"
+                className="lightbox-nav next"
+                onClick={handleNextPhoto}
+                aria-label="Next photo"
+              >
+                <i className="fas fa-chevron-right"></i>
+              </button>
+            </>
+          )}
+
+          <div className="lightbox-inner" onClick={(e) => e.stopPropagation()}>
+            <div className="lightbox-img-wrap max-h-[75vh]">
               <img
                 src={activePhoto.photoURL}
                 alt={activePhoto.title}
-                className="max-h-[70vh] w-auto max-w-full object-contain"
+                className="max-h-[72vh] w-auto max-w-full object-contain"
               />
             </div>
 
-            <div className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-              <div>
-                <h3 className="text-xl font-black text-zinc-900">{activePhoto.title}</h3>
-                {activePhoto.description && (
-                  <p className="text-xs text-zinc-600 mt-1 max-w-xl">{activePhoto.description}</p>
+            <div className="lightbox-caption">
+              <h3 className="flex items-center justify-center gap-2">
+                <i className="fas fa-camera text-[#f9c74f]"></i>
+                <span>{activePhoto.title}</span>
+              </h3>
+              {activePhoto.description && (
+                <p className="text-xs text-zinc-300 max-w-xl mx-auto mt-1 leading-relaxed">
+                  {activePhoto.description}
+                </p>
+              )}
+              <div className="flex items-center justify-center gap-4 text-[11px] text-zinc-400 font-bold mt-2">
+                <span>
+                  <i className="fas fa-calendar-alt text-[#f9c74f] mr-1"></i>
+                  {new Date(activePhoto.uploadedAt).toLocaleDateString(undefined, {
+                    year: 'numeric',
+                    month: 'short',
+                    day: 'numeric',
+                  })}
+                </span>
+                {activePhoto.uploadedByName && (
+                  <span>
+                    <i className="fas fa-user-shield text-[#f9c74f] mr-1"></i>
+                    {activePhoto.uploadedByName}
+                  </span>
                 )}
               </div>
-              <div className="text-xs font-bold text-zinc-500 shrink-0">
-                Uploaded {new Date(activePhoto.uploadedAt).toLocaleDateString()}
-              </div>
             </div>
+          </div>
+
+          <div className="lightbox-counter">
+            {activePhotoIndex + 1} / {photos.length}
           </div>
         </div>
       )}
