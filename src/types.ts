@@ -9,7 +9,8 @@ export type TabType =
   | 'profile'
   | 'notifications'
   | 'admin'
-  | 'superadmin';
+  | 'superadmin'
+  | 'adminchat';
 
 export interface UserProfile {
   id: string;
@@ -297,4 +298,36 @@ export interface SuperAdminStats {
     details: string;
     createdAt: string;
   }[];
+}
+
+export interface ChatMessageReaction {
+  emoji: string;
+  count: number;
+  userIds: string[];
+}
+
+export interface AdminChatMessage {
+  id: string;
+  topicId: string;
+  topicName?: string;
+  senderId: string;
+  senderName: string;
+  senderPhotoURL?: string;
+  senderRole: 'ADMIN' | 'SUPER_ADMIN';
+  senderTitle?: string;
+  text: string;
+  imageUrl?: string;
+  reactions?: ChatMessageReaction[];
+  isPinned?: boolean;
+  createdAt: string;
+  updatedAt?: string;
+}
+
+export interface AdminChatTopic {
+  id: string;
+  name: string;
+  description?: string;
+  icon?: string;
+  createdBy: string;
+  createdAt: string;
 }

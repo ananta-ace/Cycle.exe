@@ -176,6 +176,21 @@ export const AdminDashboard: React.FC = () => {
               </span>
             )}
           </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              window.location.hash = 'adminchat';
+            }}
+            className="py-2 px-4 rounded-full text-xs font-black transition flex items-center gap-2 border-2 border-zinc-900 bg-[#fffbeb] text-amber-950 hover:bg-amber-100 shadow-[0_3px_0_#d6d2ca]"
+            title="Open private real-time chat with other Admins and Super Admin"
+          >
+            <i className="fas fa-comments text-amber-600"></i>
+            <span>Admin HQ Chat</span>
+            <span className="text-[10px] bg-amber-400 text-zinc-900 font-black px-1.5 py-0.2 rounded-full">
+              LIVE
+            </span>
+          </button>
         </div>
       </div>
 

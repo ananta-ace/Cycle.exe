@@ -280,6 +280,42 @@
         "updatedAt": { "type": "string", "format": "date-time" }
       },
       "required": ["id", "name", "title", "active", "attend", "createdAt"]
+    },
+    "AdminChatMessage": {
+      "title": "AdminChatMessage",
+      "description": "Private real-time chat message between Admins and Super Admin",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "topicId": { "type": "string", "maxLength": 80 },
+        "topicName": { "type": "string", "maxLength": 80 },
+        "senderId": { "type": "string", "maxLength": 128 },
+        "senderName": { "type": "string", "maxLength": 80 },
+        "senderPhotoURL": { "type": "string", "maxLength": 500 },
+        "senderRole": { "type": "string", "enum": ["ADMIN", "SUPER_ADMIN"] },
+        "senderTitle": { "type": "string", "maxLength": 80 },
+        "text": { "type": "string", "maxLength": 2000 },
+        "imageUrl": { "type": "string", "maxLength": 500 },
+        "reactions": { "type": "array" },
+        "isPinned": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "topicId", "senderId", "senderName", "senderRole", "text", "createdAt"]
+    },
+    "AdminChatTopic": {
+      "title": "AdminChatTopic",
+      "description": "Discussion channels and topics within the private Admin Chat",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 80 },
+        "name": { "type": "string", "maxLength": 80 },
+        "description": { "type": "string", "maxLength": 500 },
+        "icon": { "type": "string", "maxLength": 50 },
+        "createdBy": { "type": "string", "maxLength": 128 },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "name", "createdBy", "createdAt"]
     }
   },
   "firestore": {
@@ -338,6 +374,14 @@
     "/auditLogs/{logId}": {
       "schema": { "$ref": "#/entities/AuditLog" },
       "description": "Super admin privileged audit trail"
+    },
+    "/adminChatMessages/{messageId}": {
+      "schema": { "$ref": "#/entities/AdminChatMessage" },
+      "description": "Private real-time chat messages accessible only to Admins and Super Admin"
+    },
+    "/adminChatTopics/{topicId}": {
+      "schema": { "$ref": "#/entities/AdminChatTopic" },
+      "description": "Discussion channels and topic headers within the private Admin Chat"
     }
   }
 }

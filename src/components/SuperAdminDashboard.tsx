@@ -872,6 +872,20 @@ export const SuperAdminDashboard: React.FC = () => {
             >
               <i className="fas fa-history mr-1"></i> Logs
             </button>
+            <button
+              type="button"
+              onClick={() => {
+                window.location.hash = 'adminchat';
+              }}
+              className="text-xs sm:text-sm font-bold py-2 px-4 rounded-full transition flex items-center gap-1.5 bg-[#fffbeb] text-amber-950 hover:bg-amber-100 border border-amber-300"
+              title="Launch private real-time chat with Admins"
+            >
+              <i className="fas fa-comments text-amber-600"></i>
+              <span>Admin HQ Chat</span>
+              <span className="text-[9px] bg-amber-400 text-zinc-950 font-black px-1.5 py-0.2 rounded-full">
+                LIVE
+              </span>
+            </button>
           </div>
         </div>
       </div>

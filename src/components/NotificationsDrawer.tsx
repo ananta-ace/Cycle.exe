@@ -399,6 +399,24 @@ export const NotificationsDrawer: React.FC<NotificationsDrawerProps> = ({
                           {notif.message}
                         </p>
 
+                        {/* Quick Jump to Admin Chat button */}
+                        {(notif.link === 'adminchat' || notif.title?.includes('Admin Chat')) && isAdmin && (
+                          <div className="mt-2.5 pt-2 border-t border-zinc-200 flex items-center justify-between">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                markAsRead(notif);
+                                onNavigateTab('adminchat');
+                                onClose();
+                              }}
+                              className="btn-primary text-[11px] py-1 px-3 flex items-center gap-1.5"
+                            >
+                              <i className="fas fa-comments"></i> Open Admin Chat
+                            </button>
+                            <span className="text-[10px] text-zinc-500 font-bold">Classified HQ Stream</span>
+                          </div>
+                        )}
+
                         {/* Interactive toggle prompt */}
                         {isDirectNotice && (
                           <div className="mt-2 flex items-center justify-between text-[11px] text-zinc-600 font-bold">

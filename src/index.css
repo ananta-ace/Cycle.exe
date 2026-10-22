@@ -159,6 +159,17 @@ img {
   color: #ffffff;
 }
 
+.tab.admin-chat-tab {
+  border: 2px solid #1e1e1e;
+  background: #fffbeb;
+  color: #92400e;
+}
+.tab.admin-chat-tab.active {
+  background: #1e1e1e;
+  color: #f9c74f;
+  border-color: #1e1e1e;
+}
+
 /* ---------- ROLE BADGES ---------- */
 .role-badge {
   display: inline-flex;

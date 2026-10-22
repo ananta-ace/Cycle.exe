@@ -97,6 +97,18 @@ export const Navbar: React.FC<NavbarProps> = ({
             <i className="fas fa-crown"></i> Super Admin
           </button>
         )}
+
+        {/* Private Admin HQ Chat (Visible to all Admins & Super Admin) */}
+        {isAdmin && (
+          <button
+            type="button"
+            className={`tab admin-chat-tab ${activeTab === 'adminchat' ? 'active' : ''}`}
+            onClick={() => onSelectTab('adminchat')}
+            title="Private Admin HQ Chat"
+          >
+            <i className="fas fa-user-shield text-amber-500"></i> Admin Chat
+          </button>
+        )}
       </nav>
 
       {/* Right-hand utilities & Auth */}
