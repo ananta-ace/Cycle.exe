@@ -144,6 +144,41 @@ export const AdminChatView: React.FC = () => {
   const isInitialLoad = useRef(true);
   const lastMessageCount = useRef(0);
 
+  // Auto-scroll & scroll-position tracking
+  const [showScrollBottomBtn, setShowScrollBottomBtn] = useState(false);
+  const [newMessagesBelow, setNewMessagesBelow] = useState(0);
+  const isUserScrolledUpRef = useRef(false);
+  const prevChatIdRef = useRef(activeChatId);
+  const prevCurrentMessagesLengthRef = useRef(0);
+
+  // Scroll to bottom helper
+  const scrollToBottom = (behavior: ScrollBehavior = 'smooth') => {
+    if (chatScrollContainerRef.current) {
+      chatScrollContainerRef.current.scrollTo({
+        top: chatScrollContainerRef.current.scrollHeight,
+        behavior,
+      });
+    }
+  };
+
+  // Scroll event handler on messages container
+  const handleChatScroll = () => {
+    const container = chatScrollContainerRef.current;
+    if (!container) return;
+    // Distance from the bottom of the scroll container
+    const distanceFromBottom =
+      container.scrollHeight - container.scrollTop - container.clientHeight;
+    // If within 60px of the bottom, user is considered at the bottom
+    const isAtBottom = distanceFromBottom <= 60;
+
+    isUserScrolledUpRef.current = !isAtBottom;
+    setShowScrollBottomBtn(!isAtBottom);
+
+    if (isAtBottom) {
+      setNewMessagesBelow(0);
+    }
+  };
+
   // Persist selected chat
   useEffect(() => {
     if (activeChatId) {
@@ -353,23 +388,6 @@ export const AdminChatView: React.FC = () => {
         lastMessageCount.current = list.length;
         setMessages(list);
         setLoadingMessages(false);
-
-        // Auto-scroll on initial load or if user is near bottom
-        if (isInitialLoad.current) {
-          setTimeout(() => {
-            messagesEndRef.current?.scrollIntoView({ behavior: 'auto' });
-            isInitialLoad.current = false;
-          }, 150);
-        } else {
-          const container = chatScrollContainerRef.current;
-          if (container) {
-            const isNearBottom =
-              container.scrollHeight - container.scrollTop - container.clientHeight < 250;
-            if (isNearBottom) {
-              messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-            }
-          }
-        }
       },
       (err) => {
         console.error('Error listening to admin chat messages:', err);
@@ -461,6 +479,55 @@ export const AdminChatView: React.FC = () => {
       });
     }
   }, [user, isAdmin, activeChat.id, currentChatMessages]);
+
+  // 1. When switching active conversations, reset scroll lock and scroll immediately to bottom
+  useEffect(() => {
+    isUserScrolledUpRef.current = false;
+    setShowScrollBottomBtn(false);
+    setNewMessagesBelow(0);
+    prevCurrentMessagesLengthRef.current = 0;
+
+    const timer = setTimeout(() => {
+      scrollToBottom('auto');
+    }, 60);
+    return () => clearTimeout(timer);
+  }, [activeChatId]);
+
+  // 2. Intelligent auto-scrolling: only scroll down if user hasn't scrolled up, or if user sent the message
+  useEffect(() => {
+    const currentCount = currentChatMessages.length;
+    const prevCount = prevCurrentMessagesLengthRef.current;
+
+    // Chat switched
+    if (prevChatIdRef.current !== activeChat.id) {
+      prevChatIdRef.current = activeChat.id;
+      prevCurrentMessagesLengthRef.current = currentCount;
+      scrollToBottom('auto');
+      return;
+    }
+
+    // Check if new messages were added to current chat
+    if (currentCount > prevCount) {
+      const added = currentCount - prevCount;
+      const latestMsg = currentChatMessages[currentCount - 1];
+      const isSentByMe = latestMsg && latestMsg.senderId === user?.uid;
+
+      if (isSentByMe || !isUserScrolledUpRef.current) {
+        // User sent message OR user is already at the bottom: smooth scroll down
+        scrollToBottom('smooth');
+        setNewMessagesBelow(0);
+        setShowScrollBottomBtn(false);
+        isUserScrolledUpRef.current = false;
+      } else {
+        // User has explicitly scrolled up to read older messages:
+        // DO NOT scroll down! Keep their scroll position intact and update badge.
+        setNewMessagesBelow((prev) => prev + added);
+        setShowScrollBottomBtn(true);
+      }
+    }
+
+    prevCurrentMessagesLengthRef.current = currentCount;
+  }, [currentChatMessages, activeChat.id, user?.uid]);
 
   // Calculate unread count for each conversation
   const getChatUnreadCount = (chat: AdminChatConversation) => {
@@ -685,9 +752,12 @@ export const AdminChatView: React.FC = () => {
         console.debug('Notification dispatch bypass:', nErr);
       }
 
-      // Auto-scroll to bottom
+      // User sent message - ensure immediate scroll to bottom
+      isUserScrolledUpRef.current = false;
+      setShowScrollBottomBtn(false);
+      setNewMessagesBelow(0);
       setTimeout(() => {
-        messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+        scrollToBottom('smooth');
       }, 60);
     } catch (err) {
       console.error('Failed to send message:', err);
@@ -1525,14 +1595,15 @@ export const AdminChatView: React.FC = () => {
           {/* ======================================================== */}
           <div
             ref={chatScrollContainerRef}
-            className="flex-1 overflow-y-auto p-4 sm:p-5 space-y-3 relative z-10"
+            onScroll={handleChatScroll}
+            className="flex-1 overflow-y-auto p-4 sm:p-5 relative z-10 flex flex-col"
           >
             {loadingMessages ? (
-              <div className="h-full flex items-center justify-center text-zinc-500 text-xs font-bold">
+              <div className="m-auto flex items-center justify-center text-zinc-500 text-xs font-bold">
                 <i className="fas fa-spinner fa-spin mr-2"></i> Connecting to WhatsApp real-time stream...
               </div>
             ) : currentChatMessages.length === 0 ? (
-              <div className="h-full flex flex-col items-center justify-center text-center p-6 text-zinc-400">
+              <div className="m-auto flex flex-col items-center justify-center text-center p-6 text-zinc-400">
                 <div className="w-16 h-16 rounded-full bg-white/70 border-2 border-dashed border-zinc-300 flex items-center justify-center text-2xl text-zinc-400 mb-3 shadow-sm">
                   <i className={`fas ${activeChat.icon || 'fa-comments'}`}></i>
                 </div>
@@ -1546,7 +1617,9 @@ export const AdminChatView: React.FC = () => {
                 </p>
               </div>
             ) : (
-              currentChatMessages.map((msg, index) => {
+              <div className="min-h-full flex flex-col justify-end">
+                <div className="mt-auto space-y-3">
+                  {currentChatMessages.map((msg, index) => {
                 const isMe = msg.senderId === user?.uid;
                 const prevMsg = currentChatMessages[index - 1];
                 const showDateHeader =
@@ -1745,10 +1818,34 @@ export const AdminChatView: React.FC = () => {
                     </div>
                   </React.Fragment>
                 );
-              })
+              })}
+                  <div ref={messagesEndRef} className="h-px w-full" />
+                </div>
+              </div>
             )}
-            <div ref={messagesEndRef} />
           </div>
+
+          {/* Floating "Scroll to Bottom / New Messages" Pill Button */}
+          {showScrollBottomBtn && (
+            <button
+              type="button"
+              onClick={() => {
+                scrollToBottom('smooth');
+                isUserScrolledUpRef.current = false;
+                setShowScrollBottomBtn(false);
+                setNewMessagesBelow(0);
+              }}
+              className="absolute bottom-20 right-6 z-30 bg-white hover:bg-zinc-50 text-zinc-900 border-2 border-zinc-900 rounded-full shadow-[0_4px_0_#1e1e1e] px-3.5 py-1.5 flex items-center gap-2 text-xs font-black transition-all transform hover:-translate-y-0.5 active:translate-y-0 cursor-pointer"
+              title="Jump to latest messages"
+            >
+              <i className="fas fa-arrow-down text-[#00a884]"></i>
+              <span>
+                {newMessagesBelow > 0
+                  ? `${newMessagesBelow} new ${newMessagesBelow === 1 ? 'message' : 'messages'}`
+                  : 'Latest messages'}
+              </span>
+            </button>
+          )}
 
           {/* ======================================================== */}
           {/* BOTTOM INPUT BAR (WhatsApp Style)                        */}
