@@ -341,7 +341,7 @@ export const AdminChatView: React.FC = () => {
               try {
                 new Notification(`Cycle.exe Admin [${newest.senderName}]`, {
                   body: newest.text.substring(0, 90) || 'Sent a photo',
-                  icon: '/images/favicon.png',
+                  icon: './images/favicon.png',
                 });
               } catch (e) {
                 console.debug('Notification trigger error:', e);

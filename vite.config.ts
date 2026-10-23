@@ -6,7 +6,7 @@ import fs from 'fs';
 import path from 'path';
 
 export default defineConfig({
-  base: '/',
+  base: process.env.VITE_BASE_PATH || './',
   plugins: [
     react(),
     tailwindcss(),

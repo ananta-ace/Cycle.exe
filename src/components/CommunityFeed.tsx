@@ -96,9 +96,15 @@ export const CommunityFeed: React.FC = () => {
 
     posts.forEach((p) => {
       const likeDocRef = doc(db, 'posts', p.id, 'likes', user.uid);
-      const unsub = onSnapshot(likeDocRef, (snap) => {
-        setUserLikes((prev) => ({ ...prev, [p.id]: snap.exists() }));
-      });
+      const unsub = onSnapshot(
+        likeDocRef,
+        (snap) => {
+          setUserLikes((prev) => ({ ...prev, [p.id]: snap.exists() }));
+        },
+        () => {
+          // Graceful fallback for offline / restricted
+        }
+      );
       unsubs.push(unsub);
     });
 
@@ -246,11 +252,17 @@ export const CommunityFeed: React.FC = () => {
       snap.forEach((d) => list.push({ id: d.id, ...(d.data() as Omit<PostComment, 'id'>) }));
       setCommentsMap((prev) => ({ ...prev, [postId]: list }));
 
-      onSnapshot(q, (snapshot) => {
-        const liveList: PostComment[] = [];
-        snapshot.forEach((d) => liveList.push({ id: d.id, ...(d.data() as Omit<PostComment, 'id'>) }));
-        setCommentsMap((prev) => ({ ...prev, [postId]: liveList }));
-      });
+      onSnapshot(
+        q,
+        (snapshot) => {
+          const liveList: PostComment[] = [];
+          snapshot.forEach((d) => liveList.push({ id: d.id, ...(d.data() as Omit<PostComment, 'id'>) }));
+          setCommentsMap((prev) => ({ ...prev, [postId]: liveList }));
+        },
+        () => {
+          // Graceful non-blocking
+        }
+      );
     }
   };
 

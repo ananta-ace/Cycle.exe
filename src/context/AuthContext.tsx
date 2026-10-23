@@ -151,13 +151,18 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           console.error('Error fetching/creating user profile:', err);
         }
 
-        // Real-time snapshot listener on profile to ensure immediate revocation / promotion takes effect
-        const unsubProfile = onSnapshot(userRef, (snap) => {
-          if (snap.exists()) {
-            const data = snap.data() as UserProfile;
-            setProfile(data);
+        const unsubProfile = onSnapshot(
+          userRef,
+          (snap) => {
+            if (snap.exists()) {
+              const data = snap.data() as UserProfile;
+              setProfile(data);
+            }
+          },
+          (err) => {
+            console.warn('Profile sync warning:', err);
           }
-        });
+        );
 
         // Heartbeat will be handled globally
         setLoading(false);
