@@ -149,7 +149,8 @@ export const AdminChatView: React.FC = () => {
   const [newMessagesBelow, setNewMessagesBelow] = useState(0);
   const isUserScrolledUpRef = useRef(false);
   const prevChatIdRef = useRef(activeChatId);
-  const prevCurrentMessagesLengthRef = useRef(0);
+  const prevMessageIdsRef = useRef<string[]>([]);
+  const initialScrollDoneForChatRef = useRef<Record<string, boolean>>({});
 
   // Scroll to bottom helper
   const scrollToBottom = (behavior: ScrollBehavior = 'smooth') => {
@@ -168,14 +169,22 @@ export const AdminChatView: React.FC = () => {
     // Distance from the bottom of the scroll container
     const distanceFromBottom =
       container.scrollHeight - container.scrollTop - container.clientHeight;
-    // If within 60px of the bottom, user is considered at the bottom
-    const isAtBottom = distanceFromBottom <= 60;
+    // If within 100px of the bottom, user is considered at the bottom
+    const isAtBottom = distanceFromBottom <= 100;
 
     isUserScrolledUpRef.current = !isAtBottom;
     setShowScrollBottomBtn(!isAtBottom);
 
     if (isAtBottom) {
       setNewMessagesBelow(0);
+    }
+  };
+
+  // Immediate detection when user wheels upward to read past messages
+  const handleWheel = (e: React.WheelEvent<HTMLDivElement>) => {
+    if (e.deltaY < 0) {
+      isUserScrolledUpRef.current = true;
+      setShowScrollBottomBtn(true);
     }
   };
 
@@ -265,7 +274,49 @@ export const AdminChatView: React.FC = () => {
     fetchDirectory();
   }, [isAdmin, user, profile?.role]);
 
-  // 2. Real-time Listener on Admin Chat Topics Collection (with seamless server fallback)
+  // Helper to ensure direct chat privacy on conversations
+  const isConversationPermittedForMe = (conv: AdminChatConversation): boolean => {
+    if (!user) return false;
+    const isDirect = conv.type === 'DIRECT' || (typeof conv.id === 'string' && conv.id.startsWith('direct_'));
+    if (isDirect) {
+      if (Array.isArray(conv.participantIds) && conv.participantIds.length > 0) {
+        return conv.participantIds.includes(user.uid);
+      }
+      if (typeof conv.id === 'string' && conv.id.startsWith('direct_')) {
+        const parts = conv.id.split('_');
+        return parts[1] === user.uid || parts[2] === user.uid;
+      }
+      return false; // Direct chat not involving current user -> strictly hide!
+    }
+    if (Array.isArray(conv.participantIds) && !conv.participantIds.includes('all')) {
+      return conv.participantIds.includes(user.uid) || conv.createdBy === user.uid;
+    }
+    return true;
+  };
+
+  // Helper to ensure direct chat privacy on messages
+  const isMessagePermittedForMe = (m: AdminChatMessage): boolean => {
+    if (!user) return false;
+    const chatId = m.chatId || m.topicId || '';
+    const isDirect = chatId.startsWith('direct_') || (m as any).chatType === 'DIRECT';
+    if (isDirect) {
+      if (m.senderId === user.uid) return true;
+      if (Array.isArray(m.participantIds) && m.participantIds.length > 0) {
+        return m.participantIds.includes(user.uid);
+      }
+      if (chatId.startsWith('direct_')) {
+        const parts = chatId.split('_');
+        return parts[1] === user.uid || parts[2] === user.uid;
+      }
+      return false; // Direct message not involving current user -> strictly hide!
+    }
+    if (Array.isArray(m.participantIds) && !m.participantIds.includes('all')) {
+      return m.participantIds.includes(user.uid) || m.senderId === user.uid;
+    }
+    return true;
+  };
+
+  // 2. Real-time Listener on Admin Chat Topics Collection (with seamless server fallback & privacy filter)
   useEffect(() => {
     if (!isAdmin || !user) return;
 
@@ -283,7 +334,8 @@ export const AdminChatView: React.FC = () => {
         if (res.ok) {
           const data = await res.json();
           if (Array.isArray(data.conversations) && data.conversations.length > 0) {
-            setConversations(data.conversations);
+            const permitted = (data.conversations as AdminChatConversation[]).filter(isConversationPermittedForMe);
+            setConversations(permitted);
           }
         }
       } catch (err) {
@@ -324,8 +376,11 @@ export const AdminChatView: React.FC = () => {
           list.unshift(defaultHq);
         }
 
+        // Privacy filter: only conversations involving this admin are shown
+        const permitted = list.filter(isConversationPermittedForMe);
+
         // Sort: Pinned first, then latest activity
-        list.sort((a, b) => {
+        permitted.sort((a, b) => {
           if (a.isPinned && !b.isPinned) return -1;
           if (!a.isPinned && b.isPinned) return 1;
           const timeA = new Date(a.lastMessageAt || a.updatedAt || a.createdAt).getTime();
@@ -333,7 +388,7 @@ export const AdminChatView: React.FC = () => {
           return timeB - timeA;
         });
 
-        setConversations(list);
+        setConversations(permitted);
         setLoadingChats(false);
       },
       (err) => {
@@ -343,9 +398,9 @@ export const AdminChatView: React.FC = () => {
     );
 
     return () => unsub();
-  }, [isAdmin, user, profile?.role]);
+  }, [isAdmin, user?.uid, profile?.role]);
 
-  // 3. Real-time Listener on Admin Chat Messages
+  // 3. Real-time Listener on Admin Chat Messages (with strict direct chat privacy)
   useEffect(() => {
     if (!isAdmin || !user) return;
 
@@ -362,9 +417,12 @@ export const AdminChatView: React.FC = () => {
           list.push({ id: snapDoc.id, ...data });
         });
 
+        // Filter messages for direct chat privacy so users NEVER receive or see others' direct messages
+        const permitted = list.filter(isMessagePermittedForMe);
+
         // Incoming message notification handling
-        if (!isInitialLoad.current && list.length > lastMessageCount.current) {
-          const newest = list[list.length - 1];
+        if (!isInitialLoad.current && permitted.length > lastMessageCount.current) {
+          const newest = permitted[permitted.length - 1];
           if (newest && newest.senderId !== user.uid) {
             // Play audio chime
             if (soundEnabled) {
@@ -385,24 +443,40 @@ export const AdminChatView: React.FC = () => {
           }
         }
 
-        lastMessageCount.current = list.length;
-        setMessages(list);
+        lastMessageCount.current = permitted.length;
+        setMessages(permitted);
         setLoadingMessages(false);
       },
       (err) => {
         console.error('Error listening to admin chat messages:', err);
-        setLoadingMessages(false);
+        // Fallback to server API if direct Firestore read is restricted by security rules
+        fetch('/api/admin/messages', {
+          headers: {
+            'x-user-id': user.uid,
+            'x-user-email': user.email || '',
+            'x-user-role': profile?.role || 'ADMIN',
+          },
+        })
+          .then((r) => r.json())
+          .then((d) => {
+            if (Array.isArray(d.messages)) {
+              setMessages(d.messages);
+            }
+          })
+          .catch(() => {})
+          .finally(() => setLoadingMessages(false));
       }
     );
 
     return () => unsub();
-  }, [isAdmin, user, soundEnabled, desktopNotifsEnabled]);
+  }, [isAdmin, user?.uid, soundEnabled, desktopNotifsEnabled]);
 
-  // Active conversation object
+  // Active conversation object (with fallback to first permitted conversation)
   const activeChat = useMemo(() => {
+    const found = conversations.find((c) => c.id === activeChatId && isConversationPermittedForMe(c));
+    if (found) return found;
     return (
-      conversations.find((c) => c.id === activeChatId) ||
-      conversations[0] || {
+      conversations.find((c) => isConversationPermittedForMe(c)) || {
         id: 'general-hq',
         type: 'GROUP' as AdminChatType,
         name: 'Cycle.exe Leadership HQ',
@@ -414,7 +488,7 @@ export const AdminChatView: React.FC = () => {
         updatedAt: '2026-01-01T00:00:00.000Z',
       }
     );
-  }, [conversations, activeChatId]);
+  }, [conversations, activeChatId, user?.uid]);
 
   // Messages filtered for the active conversation
   const currentChatMessages = useMemo(() => {
@@ -466,68 +540,124 @@ export const AdminChatView: React.FC = () => {
     });
 
     if (unread.length > 0) {
+      const unreadIds = unread.map((m) => m.id);
+
+      // 1. Immediately update local messages state so the green counter drops instantly
+      setMessages((prev) =>
+        prev.map((msg) => {
+          if (unreadIds.includes(msg.id)) {
+            const currentReadBy = Array.isArray(msg.readBy) ? msg.readBy : [];
+            return currentReadBy.includes(user.uid)
+              ? msg
+              : { ...msg, readBy: [...currentReadBy, user.uid] };
+          }
+          return msg;
+        })
+      );
+
+      // 2. Persist to Firestore
       unread.forEach(async (msg) => {
         try {
           const currentReadBy = Array.isArray(msg.readBy) ? msg.readBy : [];
-          await updateDoc(doc(db, 'adminChatMessages', msg.id), {
-            readBy: [...currentReadBy, user.uid],
-            updatedAt: new Date().toISOString(),
-          });
+          if (!currentReadBy.includes(user.uid)) {
+            await updateDoc(doc(db, 'adminChatMessages', msg.id), {
+              readBy: [...currentReadBy, user.uid],
+              updatedAt: new Date().toISOString(),
+            });
+          }
         } catch {
-          // Non-blocking read receipt update
+          // Handled via server mark-read endpoint below
         }
       });
+
+      // 3. Persist to server API as reliable backup
+      fetch('/api/admin/messages/mark-read', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-user-id': user.uid,
+          'x-user-email': user.email || '',
+          'x-user-role': profile?.role || 'ADMIN',
+        },
+        body: JSON.stringify({
+          chatId: activeChat.id,
+          messageIds: unreadIds,
+        }),
+      }).catch(() => {});
     }
-  }, [user, isAdmin, activeChat.id, currentChatMessages]);
+  }, [user?.uid, isAdmin, activeChat.id, currentChatMessages.length]);
 
-  // 1. When switching active conversations, reset scroll lock and scroll immediately to bottom
+  // Intelligent auto-scrolling and conversation transition
   useEffect(() => {
-    isUserScrolledUpRef.current = false;
-    setShowScrollBottomBtn(false);
-    setNewMessagesBelow(0);
-    prevCurrentMessagesLengthRef.current = 0;
+    const currentIds = currentChatMessages.map((m) => m.id);
+    const prevIds = prevMessageIdsRef.current;
+    const isNewChat = prevChatIdRef.current !== activeChat.id;
 
-    const timer = setTimeout(() => {
-      scrollToBottom('auto');
-    }, 60);
-    return () => clearTimeout(timer);
-  }, [activeChatId]);
-
-  // 2. Intelligent auto-scrolling: only scroll down if user hasn't scrolled up, or if user sent the message
-  useEffect(() => {
-    const currentCount = currentChatMessages.length;
-    const prevCount = prevCurrentMessagesLengthRef.current;
-
-    // Chat switched
-    if (prevChatIdRef.current !== activeChat.id) {
+    if (isNewChat) {
+      // Switched conversation: reset scroll lock and smoothly land at the bottom
       prevChatIdRef.current = activeChat.id;
-      prevCurrentMessagesLengthRef.current = currentCount;
-      scrollToBottom('auto');
+      prevMessageIdsRef.current = currentIds;
+      isUserScrolledUpRef.current = false;
+      setShowScrollBottomBtn(false);
+      setNewMessagesBelow(0);
+      initialScrollDoneForChatRef.current[activeChat.id] = currentIds.length > 0;
+
+      requestAnimationFrame(() => {
+        scrollToBottom('auto');
+        setTimeout(() => scrollToBottom('auto'), 80);
+      });
       return;
     }
 
-    // Check if new messages were added to current chat
-    if (currentCount > prevCount) {
-      const added = currentCount - prevCount;
-      const latestMsg = currentChatMessages[currentCount - 1];
-      const isSentByMe = latestMsg && latestMsg.senderId === user?.uid;
-
-      if (isSentByMe || !isUserScrolledUpRef.current) {
-        // User sent message OR user is already at the bottom: smooth scroll down
-        scrollToBottom('smooth');
-        setNewMessagesBelow(0);
-        setShowScrollBottomBtn(false);
-        isUserScrolledUpRef.current = false;
-      } else {
-        // User has explicitly scrolled up to read older messages:
-        // DO NOT scroll down! Keep their scroll position intact and update badge.
-        setNewMessagesBelow((prev) => prev + added);
-        setShowScrollBottomBtn(true);
+    // Same conversation
+    // 1. Initial messages population for the active conversation
+    if (!initialScrollDoneForChatRef.current[activeChat.id] && currentIds.length > 0) {
+      initialScrollDoneForChatRef.current[activeChat.id] = true;
+      prevMessageIdsRef.current = currentIds;
+      if (!isUserScrolledUpRef.current) {
+        requestAnimationFrame(() => {
+          scrollToBottom('auto');
+        });
       }
+      return;
     }
 
-    prevCurrentMessagesLengthRef.current = currentCount;
-  }, [currentChatMessages, activeChat.id, user?.uid]);
+    // 2. Detect genuinely newly added messages (by document ID)
+    const newlyAddedIds = currentIds.filter((id) => !prevIds.includes(id));
+    prevMessageIdsRef.current = currentIds;
+
+    if (newlyAddedIds.length > 0) {
+      const newlyAddedMessages = currentChatMessages.filter((m) => newlyAddedIds.includes(m.id));
+      const hasMyNewMessage = newlyAddedMessages.some((m) => m.senderId === user?.uid);
+
+      if (hasMyNewMessage) {
+        // Current user sent a message -> always scroll down to see it
+        isUserScrolledUpRef.current = false;
+        setShowScrollBottomBtn(false);
+        setNewMessagesBelow(0);
+        requestAnimationFrame(() => {
+          scrollToBottom('smooth');
+        });
+      } else if (!isUserScrolledUpRef.current) {
+        // User was already at the bottom -> follow along with incoming messages
+        requestAnimationFrame(() => {
+          scrollToBottom('smooth');
+        });
+        setNewMessagesBelow(0);
+        setShowScrollBottomBtn(false);
+      } else {
+        // User has scrolled up to view past messages:
+        // NEVER auto-scroll! Keep their scroll position stable.
+        const othersCount = newlyAddedMessages.filter((m) => m.senderId !== user?.uid).length;
+        if (othersCount > 0) {
+          setNewMessagesBelow((prev) => prev + othersCount);
+          setShowScrollBottomBtn(true);
+        }
+      }
+    }
+    // Note: If no new messages were added (read receipts updated, reactions added, pin changed, etc.),
+    // no scroll action is taken, guaranteeing the user's scroll position stays intact!
+  }, [activeChat.id, currentChatMessages, user?.uid]);
 
   // Calculate unread count for each conversation
   const getChatUnreadCount = (chat: AdminChatConversation) => {
@@ -544,6 +674,11 @@ export const AdminChatView: React.FC = () => {
       return isChatMatch && isFromOther && isUnread;
     }).length;
   };
+
+  // Total unread count across all permitted conversations
+  const totalUnreadCount = useMemo(() => {
+    return conversations.reduce((total, chat) => total + getChatUnreadCount(chat), 0);
+  }, [conversations, messages, user?.uid]);
 
   // Get other participant in 1:1 direct chat
   const getDirectChatTarget = (chat: AdminChatConversation): AdminChatParticipant | null => {
@@ -631,10 +766,21 @@ export const AdminChatView: React.FC = () => {
       const senderDisplayName = profile?.displayName || user.displayName || (isSuperAdmin ? 'Super Admin' : 'Admin');
       const senderRole = isSuperAdmin ? 'SUPER_ADMIN' : 'ADMIN';
 
+      const isDirectChat = activeChat.type === 'DIRECT' || activeChat.id.startsWith('direct_');
+      let chatParticipants: string[] = Array.isArray(activeChat.participantIds) ? activeChat.participantIds : [];
+      if (isDirectChat && (!chatParticipants || chatParticipants.length < 2)) {
+        const parts = activeChat.id.split('_');
+        if (parts.length >= 3) {
+          chatParticipants = [parts[1], parts[2]];
+        }
+      }
+
       const newMsg: Record<string, unknown> = {
         chatId: activeChat.id,
         topicId: activeChat.id,
         topicName: activeChat.name,
+        chatType: isDirectChat ? 'DIRECT' : (activeChat.type || 'GROUP'),
+        participantIds: chatParticipants,
         senderId: user.uid,
         senderName: senderDisplayName,
         senderPhotoURL: profile?.photoURL || user.photoURL || '',
@@ -709,7 +855,8 @@ export const AdminChatView: React.FC = () => {
           body: JSON.stringify({
             id: activeChat.id,
             name: activeChat.name,
-            type: activeChat.type,
+            type: isDirectChat ? 'DIRECT' : (activeChat.type || 'GROUP'),
+            participantIds: chatParticipants,
             lastMessage: {
               text: textToSend || (imageToSend ? '📷 Photo' : ''),
               senderId: user.uid,
@@ -724,30 +871,38 @@ export const AdminChatView: React.FC = () => {
         // Non-blocking sync
       }
 
-      // Add notification for recipient admins in global notifications
+      // Add notification strictly for the recipient admin in global notifications
       try {
-        const notifRecipient =
-          activeChat.type === 'DIRECT'
-            ? activeChat.participantIds.find((id) => id !== user.uid) || 'ALL_ADMINS'
-            : 'ALL_ADMINS';
-
-        const notifTitle =
-          activeChat.type === 'DIRECT'
-            ? `💬 New Direct Message from ${senderDisplayName}`
-            : `💬 ${senderDisplayName} in #${activeChat.name}`;
-
-        await addDoc(collection(db, 'notifications'), {
-          recipientId: notifRecipient,
-          senderId: user.uid,
-          senderName: senderDisplayName,
-          senderRole,
-          type: 'SYSTEM',
-          title: notifTitle,
-          message: textToSend.substring(0, 100) || 'Sent a photo',
-          link: 'adminchat',
-          isRead: false,
-          createdAt: now,
-        });
+        if (isDirectChat) {
+          const directTargetId = chatParticipants.find((id) => id !== user.uid);
+          if (directTargetId) {
+            await addDoc(collection(db, 'notifications'), {
+              recipientId: directTargetId,
+              senderId: user.uid,
+              senderName: senderDisplayName,
+              senderRole,
+              type: 'SYSTEM',
+              title: `💬 New Direct Message from ${senderDisplayName}`,
+              message: textToSend.substring(0, 100) || 'Sent a photo',
+              link: 'adminchat',
+              isRead: false,
+              createdAt: now,
+            });
+          }
+        } else {
+          await addDoc(collection(db, 'notifications'), {
+            recipientId: 'ALL_ADMINS',
+            senderId: user.uid,
+            senderName: senderDisplayName,
+            senderRole,
+            type: 'SYSTEM',
+            title: `💬 ${senderDisplayName} in #${activeChat.name}`,
+            message: textToSend.substring(0, 100) || 'Sent a photo',
+            link: 'adminchat',
+            isRead: false,
+            createdAt: now,
+          });
+        }
       } catch (nErr) {
         console.debug('Notification dispatch bypass:', nErr);
       }
@@ -1238,13 +1393,18 @@ export const AdminChatView: React.FC = () => {
             <button
               type="button"
               onClick={() => setChatFilter('unread')}
-              className={`px-3 py-1 rounded-full text-[11px] font-bold transition whitespace-nowrap ${
+              className={`px-3 py-1 rounded-full text-[11px] font-bold transition whitespace-nowrap flex items-center gap-1.5 ${
                 chatFilter === 'unread'
                   ? 'bg-[#00a884] text-white shadow-sm'
                   : 'bg-zinc-100 text-zinc-600 hover:bg-zinc-200'
               }`}
             >
-              Unread
+              <span>Unread</span>
+              {totalUnreadCount > 0 && (
+                <span className="bg-[#25d366] text-white text-[9px] font-black px-1.5 py-0.2 rounded-full shadow-sm">
+                  {totalUnreadCount > 99 ? '99+' : totalUnreadCount}
+                </span>
+              )}
             </button>
           </div>
 
@@ -1351,9 +1511,28 @@ export const AdminChatView: React.FC = () => {
                         <p className="text-xs text-zinc-500 truncate font-normal">
                           {chat.lastMessage ? (
                             <span>
-                              {chat.lastMessage.senderId === user?.uid && (
-                                <span className="text-emerald-600 font-bold mr-1">✓✓</span>
-                              )}
+                              {chat.lastMessage.senderId === user?.uid && (() => {
+                                const isDirectChat = chat.type === 'DIRECT' || chat.id.startsWith('direct_');
+                                const otherId = isDirectChat ? chat.participantIds.find((id) => id !== user?.uid) : null;
+                                const lastMsgObj = messages.find(
+                                  (m) =>
+                                    (m.chatId === chat.id || m.topicId === chat.id) &&
+                                    m.createdAt === chat.lastMessage?.createdAt
+                                );
+                                const isRead = isDirectChat
+                                  ? Boolean(lastMsgObj && otherId && Array.isArray(lastMsgObj.readBy) && lastMsgObj.readBy.includes(otherId))
+                                  : Boolean(lastMsgObj && Array.isArray(lastMsgObj.readBy) && lastMsgObj.readBy.length > 1);
+                                return (
+                                  <span
+                                    className={`font-black mr-1 text-[11px] inline-flex items-center tracking-tighter ${
+                                      isRead ? 'text-[#53bdeb]' : 'text-zinc-400'
+                                    }`}
+                                    title={isRead ? 'Read' : 'Delivered'}
+                                  >
+                                    ✓✓
+                                  </span>
+                                );
+                              })()}
                               {!isDirect && chat.lastMessage.senderId !== user?.uid && (
                                 <span className="font-semibold text-zinc-700 mr-1">
                                   {chat.lastMessage.senderName}:
@@ -1371,8 +1550,8 @@ export const AdminChatView: React.FC = () => {
                             <i className="fas fa-thumbtack text-[10px] text-amber-500"></i>
                           )}
                           {unreadCount > 0 && (
-                            <span className="w-5 h-5 rounded-full bg-[#25d366] text-white text-[10px] font-black flex items-center justify-center">
-                              {unreadCount}
+                            <span className="min-w-5 h-5 px-1.5 rounded-full bg-[#25d366] text-white text-[10px] font-black flex items-center justify-center shadow-sm shrink-0">
+                              {unreadCount > 99 ? '99+' : unreadCount}
                             </span>
                           )}
                         </div>
@@ -1596,7 +1775,9 @@ export const AdminChatView: React.FC = () => {
           <div
             ref={chatScrollContainerRef}
             onScroll={handleChatScroll}
+            onWheel={handleWheel}
             className="flex-1 overflow-y-auto p-4 sm:p-5 relative z-10 flex flex-col"
+            style={{ overflowAnchor: 'none' }}
           >
             {loadingMessages ? (
               <div className="m-auto flex items-center justify-center text-zinc-500 text-xs font-bold">
@@ -1617,8 +1798,10 @@ export const AdminChatView: React.FC = () => {
                 </p>
               </div>
             ) : (
-              <div className="min-h-full flex flex-col justify-end">
-                <div className="mt-auto space-y-3">
+              <div className="min-h-full flex flex-col">
+                {/* Spacer so short conversations sit cleanly at bottom without breaking scroll physics */}
+                <div className="flex-1 min-h-[4px]" />
+                <div className="space-y-3 pb-1">
                   {currentChatMessages.map((msg, index) => {
                 const isMe = msg.senderId === user?.uid;
                 const prevMsg = currentChatMessages[index - 1];
@@ -1725,11 +1908,31 @@ export const AdminChatView: React.FC = () => {
                               minute: '2-digit',
                             })}
                           </span>
-                          {isMe && (
-                            <span className="text-[#53bdeb] font-bold text-[11px]" title="Delivered & Read">
-                              ✓✓
-                            </span>
-                          )}
+                          {isMe && (() => {
+                            const isDirect = activeChat.type === 'DIRECT' || activeChat.id.startsWith('direct_');
+                            const otherId = isDirect
+                              ? (activeChat.participantIds || []).find((id) => id !== user?.uid)
+                              : null;
+                            const isRead = isDirect
+                              ? Boolean(otherId && Array.isArray(msg.readBy) && msg.readBy.includes(otherId))
+                              : Boolean(
+                                  (activeChat.participantIds || []).filter((id) => id !== user?.uid && id !== 'all').length > 0
+                                    ? (activeChat.participantIds || [])
+                                        .filter((id) => id !== user?.uid && id !== 'all')
+                                        .every((id) => Array.isArray(msg.readBy) && msg.readBy.includes(id))
+                                    : Array.isArray(msg.readBy) && msg.readBy.length > 1
+                                );
+                            return (
+                              <span
+                                className={`font-black text-[12px] inline-flex items-center tracking-tighter ${
+                                  isRead ? 'text-[#53bdeb]' : 'text-zinc-400'
+                                }`}
+                                title={isRead ? 'Read by recipient' : 'Delivered'}
+                              >
+                                ✓✓
+                              </span>
+                            );
+                          })()}
                         </div>
 
                         {/* Reactions tray */}
@@ -1844,6 +2047,11 @@ export const AdminChatView: React.FC = () => {
                   ? `${newMessagesBelow} new ${newMessagesBelow === 1 ? 'message' : 'messages'}`
                   : 'Latest messages'}
               </span>
+              {newMessagesBelow > 0 && (
+                <span className="bg-[#25d366] text-white text-[10px] font-black px-1.5 py-0.2 rounded-full shadow-sm ml-0.5">
+                  {newMessagesBelow}
+                </span>
+              )}
             </button>
           )}
 

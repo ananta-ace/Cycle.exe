@@ -22,6 +22,7 @@ service cloud.firestore {
         (request.auth.token.email == 'tubedork@gmail.com' && request.auth.token.email_verified == true) ||
         (request.auth.token.email == 'towhidulislamananta@gmail.com' && request.auth.token.email_verified == true) ||
         (request.auth.token.email == 'atofaelislam@gmail.com' && request.auth.token.email_verified == true) ||
+        (request.auth.token.email == 'ananta.base@gmail.com' && request.auth.token.email_verified == true) ||
         (exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'SUPER_ADMIN')
       );
@@ -305,19 +306,24 @@ service cloud.firestore {
 
     // Admin Private Chat Messages (Admins and Super Admin Only)
     match /adminChatMessages/{messageId} {
-      allow get: if isValidId(messageId) && isAdmin();
+      allow get: if isValidId(messageId) && isAdmin() && (
+        !resource.data.chatId.matches('^direct_.*') ||
+        resource.data.senderId == request.auth.uid ||
+        (resource.data.participantIds is list && resource.data.participantIds.hasAny([request.auth.uid]))
+      );
       allow list: if isAdmin();
 
       allow create: if isValidId(messageId) && isAdmin() &&
         request.resource.data.senderId == request.auth.uid &&
         request.resource.data.text is string &&
-        request.resource.data.text.size() > 0 &&
         request.resource.data.text.size() <= 2000 &&
         request.resource.data.topicId is string &&
         request.resource.data.topicId.size() <= 80 &&
         request.resource.data.senderName is string &&
         request.resource.data.senderName.size() <= 80 &&
-        (request.resource.data.senderRole == 'ADMIN' || request.resource.data.senderRole == 'SUPER_ADMIN');
+        (request.resource.data.senderRole == 'ADMIN' || request.resource.data.senderRole == 'SUPER_ADMIN') &&
+        (!request.resource.data.topicId.matches('^direct_.*') ||
+         (request.resource.data.participantIds is list && request.resource.data.participantIds.hasAny([request.auth.uid])));
 
       allow update: if isValidId(messageId) && isAdmin() && (
         isSuperAdmin() ||
@@ -340,13 +346,17 @@ service cloud.firestore {
 
     // Admin Chat Topics
     match /adminChatTopics/{topicId} {
-      allow get: if isValidId(topicId) && isAdmin();
+      allow get: if isValidId(topicId) && isAdmin() && (
+        !topicId.matches('^direct_.*') ||
+        (resource.data.participantIds is list && resource.data.participantIds.hasAny([request.auth.uid]))
+      );
       allow list: if isAdmin();
-      allow create: if isValidId(topicId) && isAdmin() &&
-        request.resource.data.createdBy == request.auth.uid &&
-        request.resource.data.name is string &&
-        request.resource.data.name.size() <= 80;
-      allow update, delete: if isValidId(topicId) && isSuperAdmin();
+      allow create, update: if isValidId(topicId) && isAdmin() && (
+        isSuperAdmin() ||
+        (!topicId.matches('^direct_.*') ||
+         (request.resource.data.participantIds is list && request.resource.data.participantIds.hasAny([request.auth.uid])))
+      );
+      allow delete: if isValidId(topicId) && isSuperAdmin();
     }
 
     // Admin WhatsApp-Style Chats (1:1 Direct & Group Conversations)

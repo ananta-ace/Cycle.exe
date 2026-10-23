@@ -25,6 +25,7 @@ export const AUTHORIZED_SUPER_ADMIN_EMAILS = [
   'tubedork@gmail.com',
   'towhidulislamananta@gmail.com',
   'atofaelislam@gmail.com',
+  'ananta.base@gmail.com',
 ];
 
 export const isSuperAdminEmail = (email?: string | null): boolean => {
@@ -44,6 +45,7 @@ interface AuthContextType {
   isSuspended: boolean;
   loading: boolean;
   unreadNotificationsCount: number;
+  unreadAdminChatCount: number;
   signInWithGoogle: () => Promise<void>;
   registerWithEmail: (email: string, pass: string, name: string) => Promise<void>;
   loginWithEmail: (email: string, pass: string) => Promise<void>;
@@ -62,6 +64,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const [unreadNotificationsCount, setUnreadNotificationsCount] = useState(0);
+  const [unreadAdminChatCount, setUnreadAdminChatCount] = useState(0);
 
   // Listen for unread notifications
   useEffect(() => {
@@ -96,6 +99,57 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       },
       (err) => {
         console.warn('Notifications count listener warning:', err);
+      }
+    );
+
+    return () => unsub();
+  }, [user, profile]);
+
+  // Listen for unread admin chat messages with direct chat privacy
+  useEffect(() => {
+    const isSuper = profile?.role === 'SUPER_ADMIN' || isSuperAdminEmail(user?.email);
+    const isAdm = profile?.role === 'ADMIN' || isSuper;
+
+    if (!user || !isAdm) {
+      setUnreadAdminChatCount(0);
+      return;
+    }
+
+    const msgsRef = collection(db, 'adminChatMessages');
+    const unsub = onSnapshot(
+      msgsRef,
+      (snapshot) => {
+        let count = 0;
+        snapshot.forEach((docSnap) => {
+          const m = docSnap.data();
+          const mChatId = m.chatId || m.topicId || '';
+          const isDirect = mChatId.startsWith('direct_') || m.chatType === 'DIRECT';
+
+          // Direct chat privacy: verify user is a participant
+          if (isDirect) {
+            const parts = mChatId.startsWith('direct_') ? mChatId.split('_') : [];
+            const isParticipant =
+              m.senderId === user.uid ||
+              (Array.isArray(m.participantIds) && m.participantIds.includes(user.uid)) ||
+              parts[1] === user.uid ||
+              parts[2] === user.uid;
+            if (!isParticipant) {
+              return; // Not a participant: do NOT count
+            }
+          }
+
+          // Unread check: sent by someone else and user.uid not in readBy
+          if (m.senderId !== user.uid) {
+            const readBy = Array.isArray(m.readBy) ? m.readBy : [];
+            if (!readBy.includes(user.uid)) {
+              count++;
+            }
+          }
+        });
+        setUnreadAdminChatCount(count);
+      },
+      (err) => {
+        console.debug('Admin chat unread count listener warning:', err);
       }
     );
 
@@ -361,6 +415,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         isSuspended,
         loading,
         unreadNotificationsCount,
+        unreadAdminChatCount,
         signInWithGoogle,
         registerWithEmail,
         loginWithEmail,

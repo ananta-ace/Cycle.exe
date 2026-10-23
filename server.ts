@@ -16,7 +16,7 @@ import {
 } from 'firebase/firestore';
 
 const app = express();
-const PORT = 3000;
+const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
 const HOST = '0.0.0.0';
 
 // -------------------------------------------------------------
@@ -26,6 +26,7 @@ const AUTHORIZED_SUPER_ADMIN_EMAILS = [
   'tubedork@gmail.com',
   'towhidulislamananta@gmail.com',
   'atofaelislam@gmail.com',
+  'ananta.base@gmail.com',
 ];
 
 function isSuperAdminEmail(email?: string | null): boolean {
@@ -42,7 +43,9 @@ function checkIsOwner(uid?: string | null, email?: string | null, role?: string 
 }
 
 // Initialize trusted server-side Firestore connection
-const firebaseConfig = JSON.parse(fs.readFileSync('./firebase-applet-config.json', 'utf8'));
+const firebaseConfig = JSON.parse(
+  fs.readFileSync(path.resolve(process.cwd(), 'firebase-applet-config.json'), 'utf8')
+);
 const serverApp =
   getApps().find((a) => a.name === 'CYCLE_SERVER_ADMIN') ||
   initServerFirebase(firebaseConfig, 'CYCLE_SERVER_ADMIN');
@@ -492,13 +495,30 @@ app.get('/api/admin/conversations', async (req: Request, res: Response) => {
   const { uid, role, email } = getAuthFromReq(req);
   const isAuthorized = role === 'ADMIN' || role === 'SUPER_ADMIN' || checkIsOwner(uid, email, role);
 
-  if (!isAuthorized) {
+  if (!isAuthorized || !uid) {
     return res.status(403).json({ error: 'Forbidden: Admins only' });
   }
 
   try {
     const list = Array.from(cachedConversations.values());
-    return res.json({ success: true, conversations: list });
+    // Direct chat privacy filter: only return direct chats where current user is a participant
+    const filtered = list.filter((conv: any) => {
+      if (conv.type === 'DIRECT' || (typeof conv.id === 'string' && conv.id.startsWith('direct_'))) {
+        if (Array.isArray(conv.participantIds)) {
+          return conv.participantIds.includes(uid);
+        }
+        if (typeof conv.id === 'string' && conv.id.startsWith('direct_')) {
+          const parts = conv.id.split('_');
+          return parts[1] === uid || parts[2] === uid;
+        }
+        return false;
+      }
+      if (Array.isArray(conv.participantIds) && !conv.participantIds.includes('all')) {
+        return conv.participantIds.includes(uid) || conv.createdBy === uid;
+      }
+      return true;
+    });
+    return res.json({ success: true, conversations: filtered });
   } catch (err) {
     console.error('Error fetching admin conversations:', err);
     return res.status(500).json({ error: 'Failed to fetch conversations' });
@@ -510,7 +530,7 @@ app.post('/api/admin/conversations', async (req: Request, res: Response) => {
   const { uid, role, email } = getAuthFromReq(req);
   const isAuthorized = role === 'ADMIN' || role === 'SUPER_ADMIN' || checkIsOwner(uid, email, role);
 
-  if (!isAuthorized) {
+  if (!isAuthorized || !uid) {
     return res.status(403).json({ error: 'Forbidden: Admins only' });
   }
 
@@ -519,19 +539,40 @@ app.post('/api/admin/conversations', async (req: Request, res: Response) => {
     return res.status(400).json({ error: 'Missing id' });
   }
 
+  // Direct chat privacy check: current user must be one of the participants
+  const isDirect = type === 'DIRECT' || String(id).startsWith('direct_');
+  if (isDirect) {
+    const parts = String(id).startsWith('direct_') ? String(id).split('_') : [];
+    const isParticipant =
+      (Array.isArray(participantIds) && participantIds.includes(uid)) ||
+      parts[1] === uid ||
+      parts[2] === uid;
+    if (!isParticipant) {
+      return res.status(403).json({ error: 'Forbidden: You cannot access or modify direct chats of other users' });
+    }
+  }
+
   try {
     const cleanId = String(id).replace(/[^a-zA-Z0-9_-]/g, '-').substring(0, 80);
     const now = new Date().toISOString();
     const existing = cachedConversations.get(cleanId) || {};
 
+    let effectiveParticipants = Array.isArray(participantIds) ? participantIds : existing.participantIds || [uid];
+    if (cleanId.startsWith('direct_')) {
+      const parts = cleanId.split('_');
+      if (parts.length >= 3) {
+        effectiveParticipants = [parts[1], parts[2]];
+      }
+    }
+
     const docData: Record<string, unknown> = {
       ...existing,
       id: cleanId,
-      type: type || existing.type || 'GROUP',
+      type: type || existing.type || (cleanId.startsWith('direct_') ? 'DIRECT' : 'GROUP'),
       name: name ? String(name).substring(0, 80) : existing.name || cleanId,
       description: description !== undefined ? String(description).substring(0, 500) : existing.description || '',
-      icon: icon !== undefined ? String(icon).substring(0, 50) : existing.icon || 'fa-users',
-      participantIds: Array.isArray(participantIds) ? participantIds : existing.participantIds || [uid],
+      icon: icon !== undefined ? String(icon).substring(0, 50) : existing.icon || (cleanId.startsWith('direct_') ? 'fa-user' : 'fa-users'),
+      participantIds: effectiveParticipants,
       participantDetails: participantDetails || existing.participantDetails || {},
       createdBy: existing.createdBy || uid,
       createdByName: createdByName || existing.createdByName || (checkIsOwner(uid, email, role) ? 'Super Admin' : 'Admin'),
@@ -561,17 +602,30 @@ app.post('/api/admin/conversations', async (req: Request, res: Response) => {
   }
 });
 
-// 3.8 Send Admin Message via Server (Guaranteed Deliverability)
+// 3.8 Send Admin Message via Server (Guaranteed Deliverability & Privacy)
 app.post('/api/admin/messages', async (req: Request, res: Response) => {
   const { uid, role, email } = getAuthFromReq(req);
   const isAuthorized = role === 'ADMIN' || role === 'SUPER_ADMIN' || checkIsOwner(uid, email, role);
 
-  if (!isAuthorized) {
+  if (!isAuthorized || !uid) {
     return res.status(403).json({ error: 'Forbidden: Admins only' });
   }
 
-  const { topicId, chatId, text, imageUrl, senderName, senderPhotoURL, senderTitle, replyTo } = req.body;
+  const { topicId, chatId, text, imageUrl, senderName, senderPhotoURL, senderTitle, replyTo, chatType, participantIds } = req.body;
   const targetTopic = String(chatId || topicId || 'general-hq').substring(0, 80);
+
+  // Direct chat privacy check: only the 2 participants can send/participate!
+  const isDirect = chatType === 'DIRECT' || targetTopic.startsWith('direct_');
+  let effectiveParticipants: string[] = Array.isArray(participantIds) ? participantIds : [];
+  if (targetTopic.startsWith('direct_')) {
+    const parts = targetTopic.split('_');
+    if (parts.length >= 3) {
+      effectiveParticipants = [parts[1], parts[2]];
+      if (parts[1] !== uid && parts[2] !== uid) {
+        return res.status(403).json({ error: 'Forbidden: You are not a participant of this direct chat' });
+      }
+    }
+  }
 
   try {
     const now = new Date().toISOString();
@@ -583,6 +637,7 @@ app.post('/api/admin/messages', async (req: Request, res: Response) => {
       chatId: targetTopic,
       topicId: targetTopic,
       topicName: targetTopic,
+      chatType: isDirect ? 'DIRECT' : (chatType || 'GROUP'),
       senderId: uid,
       senderName: (senderName || (isSuper ? 'Super Admin' : 'Admin')).substring(0, 80),
       senderRole,
@@ -595,6 +650,10 @@ app.post('/api/admin/messages', async (req: Request, res: Response) => {
       createdAt: now,
       updatedAt: now,
     };
+
+    if (effectiveParticipants.length > 0) {
+      msgDoc.participantIds = effectiveParticipants;
+    }
 
     if (imageUrl) {
       msgDoc.imageUrl = imageUrl;
@@ -635,6 +694,101 @@ app.post('/api/admin/messages', async (req: Request, res: Response) => {
   } catch (err) {
     console.error('Error sending admin message:', err);
     return res.status(500).json({ error: 'Failed to send message' });
+  }
+});
+
+// 3.9 Mark Admin Chat Messages Read (Updates read receipts)
+app.post('/api/admin/messages/mark-read', async (req: Request, res: Response) => {
+  const { uid, role, email } = getAuthFromReq(req);
+  const isAuthorized = role === 'ADMIN' || role === 'SUPER_ADMIN' || checkIsOwner(uid, email, role);
+
+  if (!isAuthorized || !uid) {
+    return res.status(403).json({ error: 'Forbidden: Admins only' });
+  }
+
+  const { chatId, messageIds } = req.body;
+  if (!chatId) {
+    return res.status(400).json({ error: 'chatId is required' });
+  }
+
+  // If direct chat, verify current user is a participant
+  if (typeof chatId === 'string' && chatId.startsWith('direct_')) {
+    const parts = chatId.split('_');
+    if (parts.length >= 3 && parts[1] !== uid && parts[2] !== uid) {
+      return res.status(403).json({ error: 'Forbidden: You cannot mark messages in direct chats of other users' });
+    }
+  }
+
+  try {
+    const idsToUpdate: string[] = Array.isArray(messageIds) ? messageIds : [];
+    if (idsToUpdate.length > 0) {
+      await Promise.allSettled(
+        idsToUpdate.map(async (msgId) => {
+          try {
+            const msgRef = serverDoc(serverDb, 'adminChatMessages', msgId);
+            const snap = await serverGetDoc(msgRef);
+            if (snap.exists()) {
+              const data = snap.data();
+              const readBy = Array.isArray(data.readBy) ? [...data.readBy] : [];
+              if (!readBy.includes(uid)) {
+                readBy.push(uid);
+                await serverSetDoc(msgRef, { readBy, updatedAt: new Date().toISOString() }, { merge: true });
+              }
+            }
+          } catch {}
+        })
+      );
+    }
+    return res.json({ success: true, readCount: idsToUpdate.length });
+  } catch (err) {
+    console.error('Error marking messages read:', err);
+    return res.status(500).json({ error: 'Failed to mark read' });
+  }
+});
+
+// 3.10 Fetch Admin Messages with Direct Chat Privacy
+app.get('/api/admin/messages', async (req: Request, res: Response) => {
+  const { uid, role, email } = getAuthFromReq(req);
+  const isAuthorized = role === 'ADMIN' || role === 'SUPER_ADMIN' || checkIsOwner(uid, email, role);
+
+  if (!isAuthorized || !uid) {
+    return res.status(403).json({ error: 'Forbidden: Admins only' });
+  }
+
+  const chatId = req.query.chatId as string;
+
+  try {
+    const msgsCol = serverCollection(serverDb, 'adminChatMessages');
+    const snap = await serverGetDocs(msgsCol);
+    const result: any[] = [];
+    snap.forEach((docSnap) => {
+      const data = docSnap.data();
+      const mChatId = data.chatId || data.topicId || '';
+
+      // Direct chat privacy check: only the 2 participants can see direct messages
+      const isDirect = mChatId.startsWith('direct_') || data.chatType === 'DIRECT';
+      if (isDirect) {
+        const parts = mChatId.startsWith('direct_') ? mChatId.split('_') : [];
+        const isParticipant =
+          data.senderId === uid ||
+          (Array.isArray(data.participantIds) && data.participantIds.includes(uid)) ||
+          parts[1] === uid ||
+          parts[2] === uid;
+        if (!isParticipant) {
+          return; // Skip: NOT a participant
+        }
+      }
+
+      if (!chatId || mChatId === chatId) {
+        result.push({ id: docSnap.id, ...data });
+      }
+    });
+
+    result.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+    return res.json({ success: true, messages: result });
+  } catch (err) {
+    console.error('Error fetching admin messages:', err);
+    return res.status(500).json({ error: 'Failed to fetch messages' });
   }
 });
 
