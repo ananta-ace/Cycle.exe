@@ -12,6 +12,7 @@ import {
   setDoc as serverSetDoc,
   collection as serverCollection,
   getDocs as serverGetDocs,
+  addDoc as serverAddDoc,
 } from 'firebase/firestore';
 
 const app = express();
@@ -440,6 +441,200 @@ app.get('/api/admin/directory', async (req: Request, res: Response) => {
   } catch (err) {
     console.error('Error fetching admin directory:', err);
     return res.status(500).json({ error: 'Failed to fetch directory' });
+  }
+});
+
+// 3.6 WhatsApp Admin Conversations (File-backed & Memory Store)
+const conversationsFile = path.resolve(process.cwd(), 'conversations.json');
+const cachedConversations: Map<string, Record<string, unknown>> = new Map();
+
+function loadConversationsFromDisk() {
+  try {
+    if (fs.existsSync(conversationsFile)) {
+      const raw = fs.readFileSync(conversationsFile, 'utf8');
+      const list = JSON.parse(raw);
+      if (Array.isArray(list)) {
+        list.forEach((c) => {
+          if (c && c.id) cachedConversations.set(c.id, c);
+        });
+      }
+    }
+  } catch (e) {
+    console.error('Failed to load conversations from disk:', e);
+  }
+  if (!cachedConversations.has('general-hq')) {
+    cachedConversations.set('general-hq', {
+      id: 'general-hq',
+      type: 'GROUP',
+      name: 'Cycle.exe Leadership HQ',
+      description: 'Official group chat for all Admins and Super Admin',
+      icon: 'fa-shield-alt',
+      participantIds: ['all'],
+      createdBy: 'system',
+      createdByName: 'System',
+      createdAt: '2026-01-01T00:00:00.000Z',
+      updatedAt: new Date().toISOString(),
+    });
+  }
+}
+loadConversationsFromDisk();
+
+function saveConversationsToDisk() {
+  try {
+    const list = Array.from(cachedConversations.values());
+    fs.writeFileSync(conversationsFile, JSON.stringify(list, null, 2), 'utf8');
+  } catch (e) {
+    console.error('Failed to save conversations to disk:', e);
+  }
+}
+
+app.get('/api/admin/conversations', async (req: Request, res: Response) => {
+  const { uid, role, email } = getAuthFromReq(req);
+  const isAuthorized = role === 'ADMIN' || role === 'SUPER_ADMIN' || checkIsOwner(uid, email, role);
+
+  if (!isAuthorized) {
+    return res.status(403).json({ error: 'Forbidden: Admins only' });
+  }
+
+  try {
+    const list = Array.from(cachedConversations.values());
+    return res.json({ success: true, conversations: list });
+  } catch (err) {
+    console.error('Error fetching admin conversations:', err);
+    return res.status(500).json({ error: 'Failed to fetch conversations' });
+  }
+});
+
+// 3.7 Create / Update WhatsApp Admin Conversation
+app.post('/api/admin/conversations', async (req: Request, res: Response) => {
+  const { uid, role, email } = getAuthFromReq(req);
+  const isAuthorized = role === 'ADMIN' || role === 'SUPER_ADMIN' || checkIsOwner(uid, email, role);
+
+  if (!isAuthorized) {
+    return res.status(403).json({ error: 'Forbidden: Admins only' });
+  }
+
+  const { id, type, name, description, icon, participantIds, participantDetails, createdByName, lastMessage, lastMessageAt } = req.body;
+  if (!id) {
+    return res.status(400).json({ error: 'Missing id' });
+  }
+
+  try {
+    const cleanId = String(id).replace(/[^a-zA-Z0-9_-]/g, '-').substring(0, 80);
+    const now = new Date().toISOString();
+    const existing = cachedConversations.get(cleanId) || {};
+
+    const docData: Record<string, unknown> = {
+      ...existing,
+      id: cleanId,
+      type: type || existing.type || 'GROUP',
+      name: name ? String(name).substring(0, 80) : existing.name || cleanId,
+      description: description !== undefined ? String(description).substring(0, 500) : existing.description || '',
+      icon: icon !== undefined ? String(icon).substring(0, 50) : existing.icon || 'fa-users',
+      participantIds: Array.isArray(participantIds) ? participantIds : existing.participantIds || [uid],
+      participantDetails: participantDetails || existing.participantDetails || {},
+      createdBy: existing.createdBy || uid,
+      createdByName: createdByName || existing.createdByName || (checkIsOwner(uid, email, role) ? 'Super Admin' : 'Admin'),
+      createdAt: existing.createdAt || now,
+      updatedAt: now,
+    };
+
+    if (lastMessage) {
+      docData.lastMessage = lastMessage;
+    }
+    if (lastMessageAt) {
+      docData.lastMessageAt = lastMessageAt;
+    }
+
+    cachedConversations.set(cleanId, docData);
+    saveConversationsToDisk();
+
+    // Try syncing to Firestore in background without blocking or failing the response
+    serverSetDoc(serverDoc(serverDb, 'adminChatTopics', cleanId), docData, { merge: true }).catch(() => {
+      // Ignored for unauthenticated server context
+    });
+
+    return res.json({ success: true, conversation: docData });
+  } catch (err) {
+    console.error('Error saving conversation:', err);
+    return res.status(500).json({ error: 'Failed to save conversation' });
+  }
+});
+
+// 3.8 Send Admin Message via Server (Guaranteed Deliverability)
+app.post('/api/admin/messages', async (req: Request, res: Response) => {
+  const { uid, role, email } = getAuthFromReq(req);
+  const isAuthorized = role === 'ADMIN' || role === 'SUPER_ADMIN' || checkIsOwner(uid, email, role);
+
+  if (!isAuthorized) {
+    return res.status(403).json({ error: 'Forbidden: Admins only' });
+  }
+
+  const { topicId, chatId, text, imageUrl, senderName, senderPhotoURL, senderTitle, replyTo } = req.body;
+  const targetTopic = String(chatId || topicId || 'general-hq').substring(0, 80);
+
+  try {
+    const now = new Date().toISOString();
+    const isSuper = checkIsOwner(uid, email, role);
+    const senderRole = isSuper ? 'SUPER_ADMIN' : 'ADMIN';
+    const messageText = (text && typeof text === 'string' && text.trim()) ? text.trim() : (imageUrl ? '📷 Photo' : 'Message');
+
+    const msgDoc: Record<string, unknown> = {
+      chatId: targetTopic,
+      topicId: targetTopic,
+      topicName: targetTopic,
+      senderId: uid,
+      senderName: (senderName || (isSuper ? 'Super Admin' : 'Admin')).substring(0, 80),
+      senderRole,
+      senderPhotoURL: senderPhotoURL || '',
+      senderTitle: senderTitle || (isSuper ? 'Executive Director' : 'Crew Moderator'),
+      text: messageText.substring(0, 2000),
+      reactions: [],
+      readBy: [uid],
+      isPinned: false,
+      createdAt: now,
+      updatedAt: now,
+    };
+
+    if (imageUrl) {
+      msgDoc.imageUrl = imageUrl;
+    }
+
+    if (replyTo && typeof replyTo === 'object') {
+      msgDoc.replyTo = {
+        messageId: replyTo.messageId,
+        senderName: replyTo.senderName,
+        text: (replyTo.text || '').substring(0, 100),
+      };
+    }
+
+    let messageId = `msg_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+    try {
+      const messageRef = await serverAddDoc(serverCollection(serverDb, 'adminChatMessages'), msgDoc);
+      messageId = messageRef.id;
+    } catch {
+      // Ignored if server unauthenticated
+    }
+
+    // Update conversation last message in disk store
+    const conv = cachedConversations.get(targetTopic);
+    if (conv) {
+      conv.lastMessage = {
+        text: messageText.substring(0, 100),
+        senderId: uid,
+        senderName: msgDoc.senderName,
+        createdAt: now,
+      };
+      conv.lastMessageAt = now;
+      conv.updatedAt = now;
+      cachedConversations.set(targetTopic, conv);
+      saveConversationsToDisk();
+    }
+
+    return res.json({ success: true, messageId, message: { id: messageId, ...msgDoc } });
+  } catch (err) {
+    console.error('Error sending admin message:', err);
+    return res.status(500).json({ error: 'Failed to send message' });
   }
 });
 

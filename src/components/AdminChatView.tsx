@@ -87,7 +87,7 @@ export const AdminChatView: React.FC = () => {
   // All Admin conversations & messages state
   const [conversations, setConversations] = useState<AdminChatConversation[]>([]);
   const [activeChatId, setActiveChatId] = useState<string>(() => {
-    return localStorage.getItem('cycle_whatsapp_active_chat') || 'group_all_admins_hq';
+    return localStorage.getItem('cycle_whatsapp_active_chat') || 'general-hq';
   });
   const [messages, setMessages] = useState<AdminChatMessage[]>([]);
   const [loadingChats, setLoadingChats] = useState(true);
@@ -230,14 +230,40 @@ export const AdminChatView: React.FC = () => {
     fetchDirectory();
   }, [isAdmin, user, profile?.role]);
 
-  // 2. Real-time Listener on Admin Chats Collection
+  // 2. Real-time Listener on Admin Chat Topics Collection (with seamless server fallback)
   useEffect(() => {
     if (!isAdmin || !user) return;
 
     setLoadingChats(true);
-    const chatsRef = collection(db, 'adminChats');
+
+    const fetchServerConversations = async () => {
+      try {
+        const res = await fetch('/api/admin/conversations', {
+          headers: {
+            'x-user-id': user.uid,
+            'x-user-email': user.email || '',
+            'x-user-role': profile?.role || 'ADMIN',
+          },
+        });
+        if (res.ok) {
+          const data = await res.json();
+          if (Array.isArray(data.conversations) && data.conversations.length > 0) {
+            setConversations(data.conversations);
+          }
+        }
+      } catch (err) {
+        console.debug('Failed to fetch server conversations:', err);
+      } finally {
+        setLoadingChats(false);
+      }
+    };
+
+    // Initial server fetch to immediately show conversations
+    fetchServerConversations();
+
+    const topicsRef = collection(db, 'adminChatTopics');
     const unsub = onSnapshot(
-      chatsRef,
+      topicsRef,
       (snapshot) => {
         const list: AdminChatConversation[] = [];
         snapshot.forEach((snapDoc) => {
@@ -245,11 +271,11 @@ export const AdminChatView: React.FC = () => {
           list.push({ id: snapDoc.id, ...data });
         });
 
-        // Ensure the default built-in group "group_all_admins_hq" exists
-        const hasHq = list.some((c) => c.id === 'group_all_admins_hq');
+        // Ensure the default built-in group "general-hq" exists
+        const hasHq = list.some((c) => c.id === 'general-hq');
         if (!hasHq) {
           const defaultHq: AdminChatConversation = {
-            id: 'group_all_admins_hq',
+            id: 'general-hq',
             type: 'GROUP',
             name: 'Cycle.exe Leadership HQ',
             description: 'Official group chat for all Admins and the Super Admin',
@@ -276,13 +302,13 @@ export const AdminChatView: React.FC = () => {
         setLoadingChats(false);
       },
       (err) => {
-        console.error('Error listening to admin chats:', err);
-        setLoadingChats(false);
+        console.debug('Firestore client subscription fallback to server API:', err);
+        fetchServerConversations();
       }
     );
 
     return () => unsub();
-  }, [isAdmin, user]);
+  }, [isAdmin, user, profile?.role]);
 
   // 3. Real-time Listener on Admin Chat Messages
   useEffect(() => {
@@ -359,7 +385,7 @@ export const AdminChatView: React.FC = () => {
     return (
       conversations.find((c) => c.id === activeChatId) ||
       conversations[0] || {
-        id: 'group_all_admins_hq',
+        id: 'general-hq',
         type: 'GROUP' as AdminChatType,
         name: 'Cycle.exe Leadership HQ',
         description: 'Official group chat for all Admins and Super Admin',
@@ -379,7 +405,9 @@ export const AdminChatView: React.FC = () => {
       const isChatMatch =
         m.chatId === activeChat.id ||
         m.topicId === activeChat.id ||
-        (!m.chatId && activeChat.id === 'group_all_admins_hq' && (!m.topicId || m.topicId === 'general-hq'));
+        ((activeChat.id === 'general-hq' || activeChat.id === 'group_all_admins_hq') &&
+          (!m.chatId || m.chatId === 'general-hq' || m.chatId === 'group_all_admins_hq') &&
+          (!m.topicId || m.topicId === 'general-hq' || m.topicId === 'group_all_admins_hq'));
 
       if (!isChatMatch) return false;
 
@@ -404,7 +432,9 @@ export const AdminChatView: React.FC = () => {
       const isChatMatch =
         m.chatId === activeChat.id ||
         m.topicId === activeChat.id ||
-        (!m.chatId && activeChat.id === 'group_all_admins_hq');
+        ((activeChat.id === 'general-hq' || activeChat.id === 'group_all_admins_hq') &&
+          (!m.chatId || m.chatId === 'general-hq' || m.chatId === 'group_all_admins_hq') &&
+          (!m.topicId || m.topicId === 'general-hq' || m.topicId === 'group_all_admins_hq'));
       return isChatMatch && m.isPinned;
     }).length;
   }, [messages, activeChat.id]);
@@ -439,7 +469,9 @@ export const AdminChatView: React.FC = () => {
       const isChatMatch =
         m.chatId === chat.id ||
         m.topicId === chat.id ||
-        (!m.chatId && chat.id === 'group_all_admins_hq' && (!m.topicId || m.topicId === 'general-hq'));
+        ((chat.id === 'general-hq' || chat.id === 'group_all_admins_hq') &&
+          (!m.chatId || m.chatId === 'general-hq' || m.chatId === 'group_all_admins_hq') &&
+          (!m.topicId || m.topicId === 'general-hq' || m.topicId === 'group_all_admins_hq'));
       const isFromOther = m.senderId !== user.uid;
       const isUnread = !m.readBy || !m.readBy.includes(user.uid);
       return isChatMatch && isFromOther && isUnread;
@@ -561,12 +593,26 @@ export const AdminChatView: React.FC = () => {
         };
       }
 
-      await addDoc(collection(db, 'adminChatMessages'), newMsg);
+      try {
+        await addDoc(collection(db, 'adminChatMessages'), newMsg);
+      } catch (firestoreErr) {
+        console.debug('Direct Firestore addDoc message failed, attempting server API:', firestoreErr);
+        await fetch('/api/admin/messages', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-user-id': user.uid,
+            'x-user-email': user.email || '',
+            'x-user-role': senderRole,
+          },
+          body: JSON.stringify(newMsg),
+        });
+      }
 
-      // Update conversation's last message in adminChats
+      // Update conversation's last message in adminChatTopics
       try {
         await setDoc(
-          doc(db, 'adminChats', activeChat.id),
+          doc(db, 'adminChatTopics', activeChat.id),
           {
             lastMessage: {
               text: textToSend || (imageToSend ? '📷 Photo' : ''),
@@ -580,7 +626,35 @@ export const AdminChatView: React.FC = () => {
           { merge: true }
         );
       } catch (convErr) {
-        console.debug('Conversation update fallback:', convErr);
+        console.debug('Conversation update fallback to server API:', convErr);
+      }
+
+      // Always notify server to sync conversation metadata
+      try {
+        await fetch('/api/admin/conversations', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-user-id': user.uid,
+            'x-user-email': user.email || '',
+            'x-user-role': senderRole,
+          },
+          body: JSON.stringify({
+            id: activeChat.id,
+            name: activeChat.name,
+            type: activeChat.type,
+            lastMessage: {
+              text: textToSend || (imageToSend ? '📷 Photo' : ''),
+              senderId: user.uid,
+              senderName: senderDisplayName,
+              createdAt: now,
+            },
+            lastMessageAt: now,
+            updatedAt: now,
+          }),
+        });
+      } catch {
+        // Non-blocking sync
       }
 
       // Add notification for recipient admins in global notifications
@@ -754,7 +828,34 @@ export const AdminChatView: React.FC = () => {
         updatedAt: now,
       };
 
-      await setDoc(doc(db, 'adminChats', chatId), newConv);
+      try {
+        await setDoc(doc(db, 'adminChatTopics', chatId), newConv);
+      } catch (cErr) {
+        console.debug('Direct chat client setDoc fallback:', cErr);
+      }
+
+      // Sync with server API
+      try {
+        await fetch('/api/admin/conversations', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-user-id': user.uid,
+            'x-user-email': user.email || '',
+            'x-user-role': isSuperAdmin ? 'SUPER_ADMIN' : 'ADMIN',
+          },
+          body: JSON.stringify(newConv),
+        });
+      } catch (apiErr) {
+        console.debug('Direct chat API sync error:', apiErr);
+      }
+
+      // Add to local state
+      setConversations((prev) => {
+        if (prev.some((c) => c.id === chatId)) return prev;
+        return [newConv, ...prev];
+      });
+
       setActiveChatId(chatId);
       setIsNewDirectModalOpen(false);
       setMobileShowConversation(true);
@@ -816,10 +917,32 @@ export const AdminChatView: React.FC = () => {
         lastMessageAt: now,
       };
 
-      await setDoc(doc(db, 'adminChats', groupId), newGroupDoc);
+      try {
+        await setDoc(doc(db, 'adminChatTopics', groupId), newGroupDoc);
+      } catch (gErr) {
+        console.debug('Group client setDoc fallback:', gErr);
+      }
+
+      try {
+        await fetch('/api/admin/conversations', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-user-id': user.uid,
+            'x-user-email': user.email || '',
+            'x-user-role': isSuperAdmin ? 'SUPER_ADMIN' : 'ADMIN',
+          },
+          body: JSON.stringify(newGroupDoc),
+        });
+      } catch (apiErr) {
+        console.debug('Group chat API sync error:', apiErr);
+      }
+
+      // Add to local state
+      setConversations((prev) => [newGroupDoc, ...prev]);
 
       // Post initial system announcement message
-      await addDoc(collection(db, 'adminChatMessages'), {
+      const announcementMsg = {
         chatId: groupId,
         topicId: groupId,
         topicName: newGroupName.trim(),
@@ -833,7 +956,22 @@ export const AdminChatView: React.FC = () => {
         isPinned: true,
         createdAt: now,
         updatedAt: now,
-      });
+      };
+
+      try {
+        await addDoc(collection(db, 'adminChatMessages'), announcementMsg);
+      } catch (msgErr) {
+        await fetch('/api/admin/messages', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-user-id': user.uid,
+            'x-user-email': user.email || '',
+            'x-user-role': isSuperAdmin ? 'SUPER_ADMIN' : 'ADMIN',
+          },
+          body: JSON.stringify(announcementMsg),
+        });
+      }
 
       setActiveChatId(groupId);
       setNewGroupName('');

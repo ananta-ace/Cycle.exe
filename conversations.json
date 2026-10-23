@@ -1,0 +1,23 @@
+[
+  {
+    "id": "general-hq",
+    "type": "GROUP",
+    "name": "Cycle.exe Leadership HQ",
+    "description": "Official group chat for all Admins and Super Admin",
+    "icon": "fa-shield-alt",
+    "participantIds": [
+      "all"
+    ],
+    "createdBy": "system",
+    "createdByName": "System",
+    "createdAt": "2026-01-01T00:00:00.000Z",
+    "updatedAt": "2026-10-23T06:56:21.577Z",
+    "lastMessage": {
+      "text": "Hello leadership team!",
+      "senderId": "",
+      "senderName": "Super Admin",
+      "createdAt": "2026-10-23T06:56:21.577Z"
+    },
+    "lastMessageAt": "2026-10-23T06:56:21.577Z"
+  }
+]
