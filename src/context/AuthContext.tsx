@@ -21,7 +21,18 @@ import {
 import { auth, db } from '../firebase';
 import { UserRole, UserProfile } from '../types';
 
-export const DESIGNATED_SUPER_ADMIN_EMAIL = 'tubedork@gmail.com';
+export const AUTHORIZED_SUPER_ADMIN_EMAILS = [
+  'tubedork@gmail.com',
+  'towhidulislamananta@gmail.com',
+  'atofaelislam@gmail.com',
+];
+
+export const isSuperAdminEmail = (email?: string | null): boolean => {
+  if (!email) return false;
+  return AUTHORIZED_SUPER_ADMIN_EMAILS.includes(email.toLowerCase().trim());
+};
+
+export const DESIGNATED_SUPER_ADMIN_EMAIL = 'atofaelislam@gmail.com';
 
 interface AuthContextType {
   user: User | null;
@@ -66,7 +77,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         let count = 0;
         const isSuper =
           profile?.role === 'SUPER_ADMIN' ||
-          user.email?.toLowerCase() === DESIGNATED_SUPER_ADMIN_EMAIL.toLowerCase();
+          isSuperAdminEmail(user.email);
         const isAdm = profile?.role === 'ADMIN' || isSuper;
 
         snapshot.forEach((docSnap) => {
@@ -104,8 +115,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
           if (!userSnap.exists()) {
             // New user registration profile
-            const isOwnerEmail =
-              currentUser.email?.toLowerCase() === DESIGNATED_SUPER_ADMIN_EMAIL.toLowerCase();
+            const isOwnerEmail = isSuperAdminEmail(currentUser.email);
 
             // Default to PUBLIC unless verified owner bootstrapped
             const initialRole: UserRole = isOwnerEmail && currentUser.emailVerified ? 'SUPER_ADMIN' : 'PUBLIC';
@@ -324,7 +334,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const role: UserRole = profile?.role || 'PUBLIC';
   const isSuperAdmin =
     role === 'SUPER_ADMIN' ||
-    user?.email?.toLowerCase() === DESIGNATED_SUPER_ADMIN_EMAIL.toLowerCase();
+    isSuperAdminEmail(user?.email);
   const isAdmin = role === 'ADMIN' || isSuperAdmin;
   const isMember =
     (role === 'MEMBER' ||

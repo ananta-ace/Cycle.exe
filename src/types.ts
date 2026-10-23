@@ -306,8 +306,43 @@ export interface ChatMessageReaction {
   userIds: string[];
 }
 
+export type AdminChatType = 'DIRECT' | 'GROUP';
+
+export interface AdminChatParticipant {
+  id: string;
+  displayName: string;
+  email?: string;
+  role: UserRole;
+  photoURL?: string;
+  customTitle?: string;
+}
+
+export interface AdminChatConversation {
+  id: string;
+  type: AdminChatType;
+  name: string;
+  description?: string;
+  icon?: string;
+  photoURL?: string;
+  participantIds: string[];
+  participantDetails?: Record<string, AdminChatParticipant>;
+  createdBy: string;
+  createdByName?: string;
+  lastMessage?: {
+    text: string;
+    senderId: string;
+    senderName: string;
+    createdAt: string;
+  };
+  lastMessageAt?: string;
+  isPinned?: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface AdminChatMessage {
   id: string;
+  chatId?: string;
   topicId: string;
   topicName?: string;
   senderId: string;
@@ -318,7 +353,13 @@ export interface AdminChatMessage {
   text: string;
   imageUrl?: string;
   reactions?: ChatMessageReaction[];
+  readBy?: string[];
   isPinned?: boolean;
+  replyTo?: {
+    messageId: string;
+    senderName: string;
+    text: string;
+  };
   createdAt: string;
   updatedAt?: string;
 }

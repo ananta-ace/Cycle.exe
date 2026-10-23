@@ -10,6 +10,8 @@ import {
   doc as serverDoc,
   getDoc as serverGetDoc,
   setDoc as serverSetDoc,
+  collection as serverCollection,
+  getDocs as serverGetDocs,
 } from 'firebase/firestore';
 
 const app = express();
@@ -17,10 +19,26 @@ const PORT = 3000;
 const HOST = '0.0.0.0';
 
 // -------------------------------------------------------------
-// Protected Server-Side Credentials (NEVER EXPOSED TO CLIENT BUNDLE)
-// -------------------------------------------------------------
 const DESIGNATED_SUPER_ADMIN_UID = 'oups31O1uCVp6XAOqLAmr0zr5aK2';
 const DESIGNATED_SUPER_ADMIN_EMAIL = 'tubedork@gmail.com';
+const AUTHORIZED_SUPER_ADMIN_EMAILS = [
+  'tubedork@gmail.com',
+  'towhidulislamananta@gmail.com',
+  'atofaelislam@gmail.com',
+];
+
+function isSuperAdminEmail(email?: string | null): boolean {
+  if (!email) return false;
+  return AUTHORIZED_SUPER_ADMIN_EMAILS.includes(email.toLowerCase().trim());
+}
+
+function checkIsOwner(uid?: string | null, email?: string | null, role?: string | null): boolean {
+  return (
+    uid === DESIGNATED_SUPER_ADMIN_UID ||
+    role === 'SUPER_ADMIN' ||
+    isSuperAdminEmail(email)
+  );
+}
 
 // Initialize trusted server-side Firestore connection
 const firebaseConfig = JSON.parse(fs.readFileSync('./firebase-applet-config.json', 'utf8'));
@@ -109,15 +127,17 @@ function addAuditLog(
 }
 
 // Trusted server-side bootstrap of the designated Super Admin
-async function ensureSuperAdminConfigured() {
+async function ensureSuperAdminConfigured(targetUid?: string, targetEmail?: string) {
+  const uid = targetUid || DESIGNATED_SUPER_ADMIN_UID;
+  const email = targetEmail || DESIGNATED_SUPER_ADMIN_EMAIL;
   try {
-    const userDocRef = serverDoc(serverDb, 'users', DESIGNATED_SUPER_ADMIN_UID);
+    const userDocRef = serverDoc(serverDb, 'users', uid);
     const snap = await serverGetDoc(userDocRef);
 
     if (!snap.exists() || snap.data()?.role !== 'SUPER_ADMIN') {
       const superAdminData = {
-        id: DESIGNATED_SUPER_ADMIN_UID,
-        email: DESIGNATED_SUPER_ADMIN_EMAIL,
+        id: uid,
+        email: email,
         emailVerified: true,
         displayName: snap.exists() ? snap.data()?.displayName || 'Super Admin (Owner)' : 'Super Admin (Owner)',
         photoURL: snap.exists() ? snap.data()?.photoURL || '' : '',
@@ -132,9 +152,9 @@ async function ensureSuperAdminConfigured() {
 
       // Write private info subcollection
       await serverSetDoc(
-        serverDoc(serverDb, 'users', DESIGNATED_SUPER_ADMIN_UID, 'private', 'info'),
+        serverDoc(serverDb, 'users', uid, 'private', 'info'),
         {
-          email: DESIGNATED_SUPER_ADMIN_EMAIL,
+          email: email,
           emailVerified: true,
           lastLoginAt: new Date().toISOString(),
           loginCount: 1,
@@ -143,17 +163,17 @@ async function ensureSuperAdminConfigured() {
       );
 
       addAuditLog(
-        DESIGNATED_SUPER_ADMIN_UID,
-        DESIGNATED_SUPER_ADMIN_EMAIL,
+        uid,
+        email,
         'SERVER_BOOTSTRAP_SUPER_ADMIN',
         'USER',
-        DESIGNATED_SUPER_ADMIN_UID,
-        `Trusted server-side initialization of Super Admin account for UID [${DESIGNATED_SUPER_ADMIN_UID}]`
+        uid,
+        `Trusted server-side initialization of Super Admin account for UID [${uid}]`
       );
 
-      console.log(`[Cycle.exe Server] Super Admin successfully configured for UID: ${DESIGNATED_SUPER_ADMIN_UID}`);
+      console.log(`[Cycle.exe Server] Super Admin successfully configured for UID: ${uid}`);
     } else {
-      console.log(`[Cycle.exe Server] Super Admin verified in Cloud Firestore for UID: ${DESIGNATED_SUPER_ADMIN_UID}`);
+      console.log(`[Cycle.exe Server] Super Admin verified in Cloud Firestore for UID: ${uid}`);
     }
   } catch (err) {
     console.error('[Cycle.exe Server] Error provisioning Super Admin in Firestore:', err);
@@ -223,9 +243,9 @@ app.post('/api/bootstrap-super-admin', async (req: Request, res: Response) => {
     return res.status(401).json({ error: 'Authentication required' });
   }
 
-  // Strict check on BOTH UID and Email
+  // Strict check on UID or authorized owner email
   const isMatchUid = uid === DESIGNATED_SUPER_ADMIN_UID;
-  const isMatchEmail = email === DESIGNATED_SUPER_ADMIN_EMAIL.toLowerCase();
+  const isMatchEmail = isSuperAdminEmail(email);
 
   if (!isMatchUid && !isMatchEmail) {
     return res.status(403).json({
@@ -240,7 +260,7 @@ app.post('/api/bootstrap-super-admin', async (req: Request, res: Response) => {
   }
 
   // Ensure database record is updated via trusted server process
-  await ensureSuperAdminConfigured();
+  await ensureSuperAdminConfigured(uid, email);
 
   addAuditLog(
     uid,
@@ -296,7 +316,7 @@ app.post('/api/session/heartbeat', (req: Request, res: Response) => {
   const visitorId = (req.body?.visitorId as string) || (req.headers['x-visitor-id'] as string) || '';
   const sessionId = uid || visitorId || `guest_${req.ip.replace(/[^a-zA-Z0-9]/g, '_')}`;
 
-  const isOwner = uid === DESIGNATED_SUPER_ADMIN_UID || email === DESIGNATED_SUPER_ADMIN_EMAIL.toLowerCase();
+  const isOwner = checkIsOwner(uid, email, role);
 
   activeSessions.set(sessionId, {
     sessionId,
@@ -326,10 +346,7 @@ app.post('/api/session/heartbeat', (req: Request, res: Response) => {
 app.get('/api/admin/stats', (req: Request, res: Response) => {
   const { uid, role, email } = getAuthFromReq(req);
 
-  const isOwner =
-    uid === DESIGNATED_SUPER_ADMIN_UID ||
-    role === 'SUPER_ADMIN' ||
-    email === DESIGNATED_SUPER_ADMIN_EMAIL.toLowerCase();
+  const isOwner = checkIsOwner(uid, email, role);
 
   if (!isOwner) {
     return res.status(403).json({
@@ -372,14 +389,65 @@ app.get('/api/admin/stats', (req: Request, res: Response) => {
   });
 });
 
+// 3.5 Admin Directory for WhatsApp Chat Comms (Admins and Super Admin)
+app.get('/api/admin/directory', async (req: Request, res: Response) => {
+  const { uid, role, email } = getAuthFromReq(req);
+  const isAuthorized = role === 'ADMIN' || role === 'SUPER_ADMIN' || checkIsOwner(uid, email, role);
+
+  if (!isAuthorized) {
+    return res.status(403).json({ error: 'Forbidden: Admins only' });
+  }
+
+  try {
+    const usersCol = serverCollection(serverDb, 'users');
+    const snap = await serverGetDocs(usersCol);
+    const admins: Array<{
+      id: string;
+      displayName: string;
+      email?: string;
+      role: string;
+      photoURL?: string;
+      customTitle?: string;
+      isSuper: boolean;
+      isOnline: boolean;
+    }> = [];
+
+    const activeUids = new Set<string>();
+    for (const [_, sess] of activeSessions.entries()) {
+      if (sess.userId && Date.now() - sess.lastActiveAt < 3 * 60 * 1000) {
+        activeUids.add(sess.userId);
+      }
+    }
+
+    snap.forEach((docSnap) => {
+      const u = docSnap.data();
+      const isSuper = u.role === 'SUPER_ADMIN' || isSuperAdminEmail(u.email);
+      if (u.role === 'ADMIN' || isSuper) {
+        admins.push({
+          id: docSnap.id,
+          displayName: u.displayName || (isSuper ? 'Super Admin (Owner)' : 'Admin'),
+          email: u.email || '',
+          role: isSuper ? 'SUPER_ADMIN' : 'ADMIN',
+          photoURL: u.photoURL || '',
+          customTitle: u.customTitle || (isSuper ? 'Executive Director' : 'Crew Moderator'),
+          isSuper,
+          isOnline: activeUids.has(docSnap.id) || (uid === docSnap.id),
+        });
+      }
+    });
+
+    return res.json({ success: true, admins });
+  } catch (err) {
+    console.error('Error fetching admin directory:', err);
+    return res.status(500).json({ error: 'Failed to fetch directory' });
+  }
+});
+
 // 4. Generate Admin / Membership Invitation Code (SUPER ADMIN ONLY)
 app.post('/api/invitations/generate', (req: Request, res: Response) => {
   const { uid, email, role } = getAuthFromReq(req);
 
-  const isOwner =
-    uid === DESIGNATED_SUPER_ADMIN_UID ||
-    role === 'SUPER_ADMIN' ||
-    email === DESIGNATED_SUPER_ADMIN_EMAIL.toLowerCase();
+  const isOwner = checkIsOwner(uid, email, role);
 
   if (!isOwner) {
     return res.status(403).json({
@@ -439,10 +507,7 @@ app.post('/api/invitations/generate', (req: Request, res: Response) => {
 app.get('/api/invitations', (req: Request, res: Response) => {
   const { uid, email, role } = getAuthFromReq(req);
 
-  const isOwner =
-    uid === DESIGNATED_SUPER_ADMIN_UID ||
-    role === 'SUPER_ADMIN' ||
-    email === DESIGNATED_SUPER_ADMIN_EMAIL.toLowerCase();
+  const isOwner = checkIsOwner(uid, email, role);
 
   if (!isOwner) {
     return res.status(403).json({
@@ -474,10 +539,7 @@ app.post('/api/invitations/revoke', (req: Request, res: Response) => {
   const { uid, email, role } = getAuthFromReq(req);
   const { codeId } = req.body;
 
-  const isOwner =
-    uid === DESIGNATED_SUPER_ADMIN_UID ||
-    role === 'SUPER_ADMIN' ||
-    email === DESIGNATED_SUPER_ADMIN_EMAIL.toLowerCase();
+  const isOwner = checkIsOwner(uid, email, role);
 
   if (!isOwner) {
     return res.status(403).json({
@@ -509,10 +571,7 @@ app.post('/api/invitations/update-limit', (req: Request, res: Response) => {
   const { uid, email, role } = getAuthFromReq(req);
   const { limit } = req.body;
 
-  const isOwner =
-    uid === DESIGNATED_SUPER_ADMIN_UID ||
-    role === 'SUPER_ADMIN' ||
-    email === DESIGNATED_SUPER_ADMIN_EMAIL.toLowerCase();
+  const isOwner = checkIsOwner(uid, email, role);
 
   if (!isOwner) {
     return res.status(403).json({
@@ -652,10 +711,7 @@ app.post('/api/admin/roles', (req: Request, res: Response) => {
   const { uid, email, role } = getAuthFromReq(req);
   const { targetUserId, targetUserEmail, action, newRole, isSuspended } = req.body;
 
-  const isOwner =
-    uid === DESIGNATED_SUPER_ADMIN_UID ||
-    role === 'SUPER_ADMIN' ||
-    email === DESIGNATED_SUPER_ADMIN_EMAIL.toLowerCase();
+  const isOwner = checkIsOwner(uid, email, role);
 
   if (!isOwner) {
     return res.status(403).json({
@@ -697,10 +753,7 @@ app.post('/api/admin/send-notice', async (req: Request, res: Response) => {
   const { uid, email, role } = getAuthFromReq(req);
   const { recipientId, title, message, isUrgent } = req.body;
 
-  const isOwner =
-    uid === DESIGNATED_SUPER_ADMIN_UID ||
-    role === 'SUPER_ADMIN' ||
-    email === DESIGNATED_SUPER_ADMIN_EMAIL.toLowerCase();
+  const isOwner = checkIsOwner(uid, email, role);
 
   if (!isOwner) {
     return res.status(403).json({
@@ -811,10 +864,7 @@ app.post('/api/notices/reply', async (req: Request, res: Response) => {
 
     const data = snap.data();
     const isRecipient = data.recipientId === uid;
-    const isOwner =
-      uid === DESIGNATED_SUPER_ADMIN_UID ||
-      role === 'SUPER_ADMIN' ||
-      email === DESIGNATED_SUPER_ADMIN_EMAIL.toLowerCase();
+    const isOwner = checkIsOwner(uid, email, role);
 
     if (!isRecipient && !isOwner) {
       return res.status(403).json({

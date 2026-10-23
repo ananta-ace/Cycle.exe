@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { useAuth, DESIGNATED_SUPER_ADMIN_EMAIL } from '../context/AuthContext';
+import { useAuth, isSuperAdminEmail } from '../context/AuthContext';
 
 export const SuperAdminBootstrapBanner: React.FC = () => {
   const { user, role, bootstrapSuperAdmin, resendVerificationEmail } = useAuth();
@@ -7,7 +7,7 @@ export const SuperAdminBootstrapBanner: React.FC = () => {
   const [msg, setMsg] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  if (!user || user.email?.toLowerCase() !== DESIGNATED_SUPER_ADMIN_EMAIL.toLowerCase()) {
+  if (!user || !isSuperAdminEmail(user.email)) {
     return null;
   }
 

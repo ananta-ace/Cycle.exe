@@ -281,13 +281,37 @@
       },
       "required": ["id", "name", "title", "active", "attend", "createdAt"]
     },
+    "AdminChatConversation": {
+      "title": "AdminChatConversation",
+      "description": "WhatsApp-style 1-to-1 direct or group chat conversation between Admins and Super Admin",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "type": { "type": "string", "enum": ["DIRECT", "GROUP"] },
+        "name": { "type": "string", "maxLength": 100 },
+        "description": { "type": "string", "maxLength": 500 },
+        "icon": { "type": "string", "maxLength": 50 },
+        "photoURL": { "type": "string", "maxLength": 500 },
+        "participantIds": { "type": "array" },
+        "participantDetails": { "type": "object" },
+        "createdBy": { "type": "string", "maxLength": 128 },
+        "createdByName": { "type": "string", "maxLength": 80 },
+        "lastMessage": { "type": "object" },
+        "lastMessageAt": { "type": "string", "format": "date-time" },
+        "isPinned": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "type", "name", "participantIds", "createdBy", "createdAt"]
+    },
     "AdminChatMessage": {
       "title": "AdminChatMessage",
       "description": "Private real-time chat message between Admins and Super Admin",
       "type": "object",
       "properties": {
         "id": { "type": "string", "maxLength": 128 },
-        "topicId": { "type": "string", "maxLength": 80 },
+        "chatId": { "type": "string", "maxLength": 128 },
+        "topicId": { "type": "string", "maxLength": 128 },
         "topicName": { "type": "string", "maxLength": 80 },
         "senderId": { "type": "string", "maxLength": 128 },
         "senderName": { "type": "string", "maxLength": 80 },
@@ -297,11 +321,13 @@
         "text": { "type": "string", "maxLength": 2000 },
         "imageUrl": { "type": "string", "maxLength": 500 },
         "reactions": { "type": "array" },
+        "readBy": { "type": "array" },
         "isPinned": { "type": "boolean" },
+        "replyTo": { "type": "object" },
         "createdAt": { "type": "string", "format": "date-time" },
         "updatedAt": { "type": "string", "format": "date-time" }
       },
-      "required": ["id", "topicId", "senderId", "senderName", "senderRole", "text", "createdAt"]
+      "required": ["id", "senderId", "senderName", "senderRole", "createdAt"]
     },
     "AdminChatTopic": {
       "title": "AdminChatTopic",
@@ -382,6 +408,10 @@
     "/adminChatTopics/{topicId}": {
       "schema": { "$ref": "#/entities/AdminChatTopic" },
       "description": "Discussion channels and topic headers within the private Admin Chat"
+    },
+    "/adminChats/{chatId}": {
+      "schema": { "$ref": "#/entities/AdminChatConversation" },
+      "description": "WhatsApp-style 1-to-1 and group chats exclusively between Admins and Super Admin"
     }
   }
 }

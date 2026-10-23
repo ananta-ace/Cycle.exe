@@ -21,6 +21,7 @@ service cloud.firestore {
         request.auth.uid == 'oups31O1uCVp6XAOqLAmr0zr5aK2' ||
         (request.auth.token.email == 'tubedork@gmail.com' && request.auth.token.email_verified == true) ||
         (request.auth.token.email == 'towhidulislamananta@gmail.com' && request.auth.token.email_verified == true) ||
+        (request.auth.token.email == 'atofaelislam@gmail.com' && request.auth.token.email_verified == true) ||
         (exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'SUPER_ADMIN')
       );
@@ -327,7 +328,8 @@ service cloud.firestore {
           request.resource.data.text.size() <= 2000
         ) ||
         request.resource.data.diff(resource.data).affectedKeys().hasOnly(['reactions', 'updatedAt']) ||
-        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['isPinned', 'updatedAt'])
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['isPinned', 'updatedAt']) ||
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['readBy', 'updatedAt'])
       );
 
       allow delete: if isValidId(messageId) && (
@@ -345,6 +347,23 @@ service cloud.firestore {
         request.resource.data.name is string &&
         request.resource.data.name.size() <= 80;
       allow update, delete: if isValidId(topicId) && isSuperAdmin();
+    }
+
+    // Admin WhatsApp-Style Chats (1:1 Direct & Group Conversations)
+    match /adminChats/{chatId} {
+      allow get: if isValidId(chatId) && isAdmin();
+      allow list: if isAdmin();
+      allow create: if isValidId(chatId) && isAdmin() &&
+        request.resource.data.createdBy == request.auth.uid &&
+        request.resource.data.name is string &&
+        request.resource.data.name.size() <= 100 &&
+        request.resource.data.participantIds is list;
+      allow update: if isValidId(chatId) && isAdmin() && (
+        isSuperAdmin() ||
+        resource.data.createdBy == request.auth.uid ||
+        resource.data.participantIds.hasAny([request.auth.uid])
+      );
+      allow delete: if isValidId(chatId) && (isSuperAdmin() || resource.data.createdBy == request.auth.uid);
     }
   }
 }

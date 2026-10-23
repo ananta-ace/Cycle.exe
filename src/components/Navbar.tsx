@@ -104,9 +104,9 @@ export const Navbar: React.FC<NavbarProps> = ({
             type="button"
             className={`tab admin-chat-tab ${activeTab === 'adminchat' ? 'active' : ''}`}
             onClick={() => onSelectTab('adminchat')}
-            title="Private Admin HQ Chat"
+            title="WhatsApp Admin Chat HQ"
           >
-            <i className="fas fa-user-shield text-amber-500"></i> Admin Chat
+            <i className="fab fa-whatsapp text-emerald-500 text-sm"></i> Admin Chat
           </button>
         )}
       </nav>
