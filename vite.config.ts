@@ -6,16 +6,22 @@ import fs from 'fs';
 import path from 'path';
 
 export default defineConfig({
-  base: process.env.VITE_BASE_PATH || './',
+  base: process.env.NODE_ENV === 'production' ? (process.env.VITE_BASE_PATH || './') : '/',
   plugins: [
     react(),
     tailwindcss(),
     {
-      name: 'github-pages-fallback',
+      name: 'github-pages-setup',
       closeBundle() {
         const distDir = path.resolve('dist');
         const indexPath = path.join(distDir, 'index.html');
         const fallbackPath = path.join(distDir, '404.html');
+        const nojekyllPath = path.join(distDir, '.nojekyll');
+
+        // Create .nojekyll to disable Jekyll on GitHub Pages
+        fs.writeFileSync(nojekyllPath, '');
+
+        // Generate 404.html fallback for GitHub Pages SPA routing
         if (fs.existsSync(indexPath)) {
           fs.copyFileSync(indexPath, fallbackPath);
         }

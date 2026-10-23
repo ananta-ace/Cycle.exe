@@ -12,6 +12,27 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+  <script>
+    // GitHub Pages trailing-slash auto-redirect so relative assets (./assets/...) resolve properly
+    (function () {
+      var p = window.location.pathname;
+      if (p && !p.endsWith('/') && !p.split('/').pop().includes('.')) {
+        window.location.replace(p + '/' + window.location.search + window.location.hash);
+      }
+    })();
+    // Startup error listener to ensure a user never sees an uninformative blank white screen
+    window.addEventListener('error', function (e) {
+      var root = document.getElementById('root');
+      if (root && (!root.children || root.children.length === 0)) {
+        root.innerHTML = '<div style="min-height:100vh;background:#0f172a;color:#f87171;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:24px;font-family:sans-serif;text-align:center;">' +
+          '<div style="font-size:36px;margin-bottom:12px;">⚠️</div>' +
+          '<h2 style="color:#ffffff;font-size:18px;margin-bottom:8px;font-weight:bold;">Cycle.exe Loading Issue</h2>' +
+          '<p style="color:#94a3b8;font-size:13px;max-width:440px;margin-bottom:16px;line-height:1.5;">' + (e.message || 'Error initializing application scripts. Click below to reload.') + '</p>' +
+          '<button onclick="location.reload()" style="background:#f9c74f;color:#1e1e1e;font-weight:bold;padding:10px 20px;border-radius:12px;border:none;cursor:pointer;font-size:13px;">Reload Application</button>' +
+        '</div>';
+      }
+    });
+  </script>
 </head>
 <body>
   <div id="root"></div>

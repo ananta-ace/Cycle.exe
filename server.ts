@@ -1199,11 +1199,25 @@ async function startServer() {
       appType: 'spa',
     });
     app.use(vite.middlewares);
+
+    // Explicit fallback for SPA routes in dev mode (Express 5 compatible)
+    app.use(async (req: Request, res: Response, next) => {
+      const url = req.originalUrl;
+      if (url.startsWith('/api/')) return next();
+      try {
+        let template = fs.readFileSync(path.resolve(process.cwd(), 'index.html'), 'utf-8');
+        template = await vite.transformIndexHtml(url, template);
+        res.status(200).set({ 'Content-Type': 'text/html' }).end(template);
+      } catch (e) {
+        vite.ssrFixStacktrace(e as Error);
+        next(e);
+      }
+    });
   } else {
     const distPath = path.resolve(process.cwd(), 'dist');
     if (fs.existsSync(distPath)) {
       app.use(express.static(distPath));
-      app.get('*', (_req: Request, res: Response) => {
+      app.use((_req: Request, res: Response) => {
         res.sendFile(path.resolve(distPath, 'index.html'));
       });
     }
