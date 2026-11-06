@@ -345,6 +345,8 @@ export interface AdminChatMessage {
   chatId?: string;
   topicId: string;
   topicName?: string;
+  chatType?: AdminChatType;
+  participantIds?: string[];
   senderId: string;
   senderName: string;
   senderPhotoURL?: string;

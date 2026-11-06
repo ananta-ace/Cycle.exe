@@ -19,7 +19,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   theme,
   onToggleTheme,
 }) => {
-  const { user, profile, role, isSuperAdmin, isAdmin, unreadNotificationsCount } = useAuth();
+  const { user, profile, role, isSuperAdmin, isAdmin, unreadNotificationsCount, unreadAdminChatCount } = useAuth();
 
   return (
     <div className="topbar">
@@ -107,6 +107,11 @@ export const Navbar: React.FC<NavbarProps> = ({
             title="WhatsApp Admin Chat HQ"
           >
             <i className="fab fa-whatsapp text-emerald-500 text-sm"></i> Admin Chat
+            {unreadAdminChatCount > 0 && (
+              <span className="bg-[#25d366] text-white text-[10px] font-black px-1.5 py-0.2 rounded-full border border-zinc-900 ml-1 shadow-sm">
+                {unreadAdminChatCount > 99 ? '99+' : unreadAdminChatCount}
+              </span>
+            )}
           </button>
         )}
       </nav>

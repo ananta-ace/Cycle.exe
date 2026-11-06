@@ -126,8 +126,8 @@ export const CommunityFeed: React.FC = () => {
         setPostError('Only image files (PNG, JPEG, WebP, GIF) are allowed.');
         return;
       }
-      if (f.size > 5 * 1024 * 1024) {
-        setPostError(`File "${f.name}" exceeds the 5MB maximum limit.`);
+      if (f.size > 25 * 1024 * 1024) {
+        setPostError(`File "${f.name}" exceeds the 25MB maximum limit.`);
         return;
       }
       validFiles.push(f);
@@ -168,7 +168,7 @@ export const CommunityFeed: React.FC = () => {
           const file = selectedFiles[i];
           try {
             setUploadProgress(Math.round(((i + 1) / selectedFiles.length) * 80));
-            const url = await uploadImage(file);
+            const url = await uploadImage(file, { folder: 'posts' });
             uploadedUrls.push(url);
           } catch (fileErr) {
             console.error('File upload error:', fileErr);

@@ -104,8 +104,8 @@ export const GalleryView: React.FC = () => {
       setUploadError('Only image files (JPEG, PNG, WebP) are allowed.');
       return;
     }
-    if (file.size > 15 * 1024 * 1024) {
-      setUploadError('Image size must be under 15MB.');
+    if (file.size > 30 * 1024 * 1024) {
+      setUploadError('Image size must be under 30MB.');
       return;
     }
     setUploadError(null);
@@ -130,12 +130,15 @@ export const GalleryView: React.FC = () => {
 
     try {
       setUploading(true);
-      setUploadProgress(40);
+      setUploadProgress(10);
       setUploadError(null);
 
-      // Fast, resilient upload via backend or compressed canvas
-      const photoURL = await uploadImage(uploadFile);
-      setUploadProgress(90);
+      // Direct Firebase Storage upload with live progress tracking
+      const photoURL = await uploadImage(uploadFile, {
+        folder: 'gallery',
+        onProgress: (p) => setUploadProgress(Math.max(10, Math.min(95, p))),
+      });
+      setUploadProgress(98);
 
       const photoData: Omit<GalleryPhoto, 'id'> = {
         title: uploadTitle.trim(),
@@ -450,6 +453,9 @@ export const GalleryView: React.FC = () => {
                   onChange={handleFileChange}
                   className="block w-full text-xs text-zinc-600 file:mr-3 file:py-2 file:px-4 file:rounded-xl file:border-2 file:border-[#1e1e1e] file:text-xs file:font-black file:bg-[#f9c74f] file:text-black hover:file:bg-[#e0b040] cursor-pointer"
                 />
+                <span className="text-[11px] text-zinc-500 font-bold block mt-1">
+                  <i className="fas fa-cloud-upload-alt mr-1 text-emerald-600"></i> Firebase Storage: supports high-resolution photos up to 30MB (JPEG, PNG, WebP)
+                </span>
               </div>
 
               {filePreview && (

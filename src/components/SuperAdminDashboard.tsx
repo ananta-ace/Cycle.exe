@@ -609,9 +609,20 @@ export const SuperAdminDashboard: React.FC = () => {
   const handleUploadFeatPhoto = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+
+    if (!file.type.startsWith('image/')) {
+      alert('Please select an image file (PNG, JPG, WebP).');
+      return;
+    }
+
+    if (file.size > 30 * 1024 * 1024) {
+      alert('Image size must be under 30MB.');
+      return;
+    }
+
     try {
       setUploadingFeatImg(true);
-      const url = await uploadImage(file);
+      const url = await uploadImage(file, { folder: 'featured' });
       setFeatImg(url);
     } catch (err) {
       console.error('Upload error:', err);

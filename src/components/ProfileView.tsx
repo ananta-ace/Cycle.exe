@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useAuth, DESIGNATED_SUPER_ADMIN_EMAIL } from '../context/AuthContext';
+import { uploadImage } from '../utils/imageUpload';
 
 export const ProfileView: React.FC = () => {
   const {
@@ -19,6 +20,8 @@ export const ProfileView: React.FC = () => {
   const [isEditing, setIsEditing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saveMsg, setSaveMsg] = useState<string | null>(null);
+  const [uploadingAvatar, setUploadingAvatar] = useState(false);
+  const [avatarProgress, setAvatarProgress] = useState<number | null>(null);
 
   // Invitation code state
   const [inviteCode, setInviteCode] = useState('');
@@ -71,18 +74,36 @@ export const ProfileView: React.FC = () => {
     }
   };
 
-  const handleAvatarUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!e.target.files?.[0]) return;
     const file = e.target.files[0];
-    if (file.size > 5 * 1024 * 1024) {
-      alert('Avatar image must be under 5MB.');
+
+    if (!file.type.startsWith('image/')) {
+      alert('Please select a valid image file (PNG, JPG, WebP).');
       return;
     }
-    const reader = new FileReader();
-    reader.onloadend = () => {
-      setPhotoURL(reader.result as string);
-    };
-    reader.readAsDataURL(file);
+
+    if (file.size > 30 * 1024 * 1024) {
+      alert('Avatar image must be under 30MB.');
+      return;
+    }
+
+    try {
+      setUploadingAvatar(true);
+      setAvatarProgress(10);
+      const url = await uploadImage(file, {
+        folder: 'avatars',
+        onProgress: (p) => setAvatarProgress(p),
+      });
+      setPhotoURL(url);
+      setSaveMsg('Avatar uploaded to Firebase Storage! Click "Save Profile" to finish.');
+    } catch (err: unknown) {
+      console.error('Failed to upload avatar:', err);
+      alert('Failed to upload avatar image to storage. Please try again.');
+    } finally {
+      setUploadingAvatar(false);
+      setAvatarProgress(null);
+    }
   };
 
   return (
@@ -91,7 +112,15 @@ export const ProfileView: React.FC = () => {
       <div className="neo-card p-6 sm:p-9">
         <div className="flex flex-col md:flex-row items-center md:items-start gap-8">
           <div className="relative group">
-            <div className="w-32 h-32 rounded-full border-4 border-zinc-900 bg-zinc-200 overflow-hidden flex items-center justify-center font-bold text-4xl shadow-[0_6px_0_#d6d2ca] flex-shrink-0">
+            <div className="w-32 h-32 rounded-full border-4 border-zinc-900 bg-zinc-200 overflow-hidden flex items-center justify-center font-bold text-4xl shadow-[0_6px_0_#d6d2ca] flex-shrink-0 relative">
+              {uploadingAvatar ? (
+                <div className="absolute inset-0 bg-black/60 text-white flex flex-col items-center justify-center p-2 text-center z-10">
+                  <i className="fas fa-spinner fa-spin text-2xl mb-1 text-[#f9c74f]"></i>
+                  <span className="text-[10px] font-bold">
+                    {avatarProgress !== null ? `${avatarProgress}%` : 'Uploading...'}
+                  </span>
+                </div>
+              ) : null}
               {profile?.photoURL || photoURL ? (
                 <img
                   src={photoURL || profile?.photoURL}
@@ -103,12 +132,17 @@ export const ProfileView: React.FC = () => {
               )}
             </div>
             {isEditing && (
-              <label className="absolute bottom-0 right-0 w-9 h-9 rounded-full bg-[#1e1e1e] text-[#f9c74f] border-2 border-zinc-900 flex items-center justify-center cursor-pointer text-sm hover:bg-[#b45309] shadow-md">
-                <i className="fas fa-camera"></i>
+              <label
+                className={`absolute bottom-0 right-0 w-9 h-9 rounded-full bg-[#1e1e1e] text-[#f9c74f] border-2 border-zinc-900 flex items-center justify-center cursor-pointer text-sm hover:bg-[#b45309] shadow-md ${
+                  uploadingAvatar ? 'opacity-50 pointer-events-none' : ''
+                }`}
+              >
+                <i className={uploadingAvatar ? 'fas fa-spinner fa-spin' : 'fas fa-camera'}></i>
                 <input
                   type="file"
                   accept="image/*"
                   onChange={handleAvatarUpload}
+                  disabled={uploadingAvatar}
                   className="hidden"
                 />
               </label>

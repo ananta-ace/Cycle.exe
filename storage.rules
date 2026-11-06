@@ -1,20 +1,64 @@
 rules_version = '2';
 service firebase.storage {
   match /b/{bucket}/o {
-    match /users/{userId}/{allPaths=**} {
-      allow read: if true;
-      allow write: if request.auth != null && request.auth.uid == userId
-                   && request.resource.size < 5 * 1024 * 1024
-                   && request.resource.contentType.matches('image/.*');
-    }
-    match /posts/{postId}/{allPaths=**} {
-      allow read: if true;
-      allow write: if request.auth != null
-                   && request.resource.size < 8 * 1024 * 1024
-                   && request.resource.contentType.matches('image/.*');
-    }
+    // Allow public read for all media assets
     match /{allPaths=**} {
-      allow read, write: if false;
+      allow read: if true;
+    }
+
+    // Allow uploads across all application categories up to 35MB for images
+    match /uploads/{allPaths=**} {
+      allow write: if request.auth != null
+                   && request.resource.size < 35 * 1024 * 1024
+                   && request.resource.contentType.matches('image/.*');
+    }
+
+    match /users/{userId}/{allPaths=**} {
+      allow write: if request.auth != null
+                   && request.resource.size < 35 * 1024 * 1024
+                   && request.resource.contentType.matches('image/.*');
+    }
+
+    match /posts/{allPaths=**} {
+      allow write: if request.auth != null
+                   && request.resource.size < 35 * 1024 * 1024
+                   && request.resource.contentType.matches('image/.*');
+    }
+
+    match /gallery/{allPaths=**} {
+      allow write: if request.auth != null
+                   && request.resource.size < 35 * 1024 * 1024
+                   && request.resource.contentType.matches('image/.*');
+    }
+
+    match /chat/{allPaths=**} {
+      allow write: if request.auth != null
+                   && request.resource.size < 35 * 1024 * 1024
+                   && request.resource.contentType.matches('image/.*');
+    }
+
+    match /missions/{allPaths=**} {
+      allow write: if request.auth != null
+                   && request.resource.size < 35 * 1024 * 1024
+                   && request.resource.contentType.matches('image/.*');
+    }
+
+    match /avatars/{allPaths=**} {
+      allow write: if request.auth != null
+                   && request.resource.size < 35 * 1024 * 1024
+                   && request.resource.contentType.matches('image/.*');
+    }
+
+    match /featured/{allPaths=**} {
+      allow write: if request.auth != null
+                   && request.resource.size < 35 * 1024 * 1024
+                   && request.resource.contentType.matches('image/.*');
+    }
+
+    // Deny non-matching writes
+    match /{allPaths=**} {
+      allow write: if false;
     }
   }
 }
+

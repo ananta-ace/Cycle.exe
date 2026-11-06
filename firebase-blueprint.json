@@ -313,6 +313,8 @@
         "chatId": { "type": "string", "maxLength": 128 },
         "topicId": { "type": "string", "maxLength": 128 },
         "topicName": { "type": "string", "maxLength": 80 },
+        "chatType": { "type": "string", "enum": ["DIRECT", "GROUP"] },
+        "participantIds": { "type": "array" },
         "senderId": { "type": "string", "maxLength": 128 },
         "senderName": { "type": "string", "maxLength": 80 },
         "senderPhotoURL": { "type": "string", "maxLength": 500 },

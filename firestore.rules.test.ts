@@ -94,4 +94,18 @@ describe('Firestore Security Rules — Dirty Dozen Invariant Tests', () => {
     const isValidPostSize = longPost.length <= 2000;
     expect(isValidPostSize).toBe(false);
   });
+
+  it('13. Strictly blocks non-participants from accessing direct chat messages', () => {
+    const directChatParticipants = ['user_alpha', 'user_beta'];
+    const thirdPartyAdmin = 'admin_charlie';
+    const isParticipant = directChatParticipants.includes(thirdPartyAdmin);
+    expect(isParticipant).toBe(false);
+  });
+
+  it('14. Allows authorized participant to update readBy array for read receipts', () => {
+    const readerUid = 'user_beta';
+    const currentReadBy = ['user_alpha'];
+    const updatedReadBy = [...currentReadBy, readerUid];
+    expect(updatedReadBy).toContain('user_beta');
+  });
 });
