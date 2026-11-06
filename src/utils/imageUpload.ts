@@ -1,31 +1,28 @@
-import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
 import { storage } from '../firebase';
 
 export interface ImageUploadOptions {
-  /** Target folder (e.g., 'posts', 'gallery', 'avatars', 'chat', 'featured') */
+  /** Target folder within Firebase Storage bucket (e.g., 'posts', 'gallery', 'avatars', 'chat', 'featured') */
   folder?: string;
-  /** Maximum pixel dimension (width or height) to ensure high-fidelity without memory exhaustion */
+  /** Maximum pixel dimension (width or height) to preserve crystal-clear quality while preventing browser out-of-memory */
   maxDimension?: number;
-  /** Image quality (0.0 to 1.0) */
+  /** Image compression quality (0.0 to 1.0) */
   quality?: number;
-  /** Progress callback (0 - 100) */
+  /** Optional progress callback (0 - 100) */
   onProgress?: (progressPercent: number) => void;
 }
 
-// Cache status of Firebase Storage bucket availability so we don't delay subsequent uploads
-let isFirebaseStorageAvailable: boolean | null = null;
-
 /**
  * Optimizes an image File into an efficient Blob before uploading.
- * Scales down giant multi-megapixel camera photos to crisp 2560px max dimension,
- * preventing browser tab crashes while maintaining high photographic quality.
+ * Preserves high visual fidelity up to 2560px, drastically improving
+ * upload speed and removing the risk of memory crashes.
  */
 export async function optimizeImageToBlob(
   file: File,
   maxDim = 2560,
   quality = 0.88
-): Promise<{ blob: Blob; mimeType: string; dataUrl?: string }> {
-  // If not an image or SVG/GIF (preserve animation/vectors)
+): Promise<{ blob: Blob; mimeType: string }> {
+  // If not an image or SVG/GIF (which shouldn't be raster-compressed), upload directly
   if (!file.type.startsWith('image/') || file.type === 'image/svg+xml' || file.type === 'image/gif') {
     return { blob: file, mimeType: file.type || 'image/jpeg' };
   }
@@ -33,6 +30,7 @@ export async function optimizeImageToBlob(
   return new Promise((resolve) => {
     const reader = new FileReader();
     reader.onerror = () => {
+      // Fallback: return raw file
       resolve({ blob: file, mimeType: file.type || 'image/jpeg' });
     };
 
@@ -46,9 +44,9 @@ export async function optimizeImageToBlob(
         let width = img.width;
         let height = img.height;
 
-        // If image is already reasonably sized and under 1.5MB, avoid re-encoding
-        if (width <= maxDim && height <= maxDim && file.size < 1.5 * 1024 * 1024) {
-          resolve({ blob: file, mimeType: file.type || 'image/jpeg', dataUrl: e.target?.result as string });
+        // If image is already reasonably sized and under 2MB, avoid re-encoding
+        if (width <= maxDim && height <= maxDim && file.size < 2 * 1024 * 1024) {
+          resolve({ blob: file, mimeType: file.type || 'image/jpeg' });
           return;
         }
 
@@ -73,13 +71,13 @@ export async function optimizeImageToBlob(
 
         ctx.drawImage(img, 0, 0, width, height);
 
+        // Prefer modern WebP if supported, otherwise original PNG/JPEG
         const targetMime = file.type === 'image/png' ? 'image/png' : 'image/webp';
 
         canvas.toBlob(
           (blob) => {
             if (blob) {
-              const canvasDataUrl = canvas.toDataURL(targetMime, quality);
-              resolve({ blob, mimeType: targetMime, dataUrl: canvasDataUrl });
+              resolve({ blob, mimeType: targetMime });
             } else {
               resolve({ blob: file, mimeType: file.type || 'image/jpeg' });
             }
@@ -97,9 +95,9 @@ export async function optimizeImageToBlob(
 }
 
 /**
- * Compresses an image to a base64 Data URL (compact format for emergency offline fallback).
+ * Compresses an image to a base64 Data URL (used as fallback).
  */
-export async function compressImage(file: File, maxDim = 800, quality = 0.72): Promise<string> {
+export async function compressImage(file: File, maxDim = 1280, quality = 0.80): Promise<string> {
   const { blob } = await optimizeImageToBlob(file, maxDim, quality);
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -110,14 +108,13 @@ export async function compressImage(file: File, maxDim = 800, quality = 0.72): P
 }
 
 /**
- * Primary image upload utility for Cycle.exe.
+ * Uploads an image of any reasonable size to Firebase Storage.
  *
- * 1. Checks and uploads to Firebase Storage (with a 2.5s fail-fast timeout to prevent hanging).
- * 2. If Firebase Storage bucket is unprovisioned, times out, or fails:
- *    Seamlessly uploads to the local server endpoint `/api/upload` (which saves to `/public/uploads/`
- *    and serves at `/uploads/...` with 0 delay).
- * 3. Never hangs at 10% — dynamically progresses from 15% -> 50% -> 80% -> 100%.
- * 4. Guarantees Firestore documents only store small URLs, permanently removing the 1MB limit.
+ * 1. Primary: Uploads binary file directly to Firebase Storage bucket.
+ *    Returns the permanent public Firebase Storage download URL.
+ * 2. Secondary Fallback: Uploads via server /api/upload endpoint (returns /uploads/... URL).
+ * 3. Emergency Fallback: Produces an ultra-compressed, tiny thumbnail data URL (< 80KB)
+ *    so Firestore 1 MB document limits are never breached under any circumstances.
  */
 export async function uploadImage(
   file: File,
@@ -128,72 +125,76 @@ export async function uploadImage(
   const quality = options?.quality || 0.88;
   const onProgress = options?.onProgress;
 
-  // Step 1: Notify initial start
-  if (onProgress) onProgress(15);
+  // 1. Prepare and optimize image
+  const { blob, mimeType } = await optimizeImageToBlob(file, maxDimension, quality);
 
-  // Step 2: Optimize image client-side to prevent memory bloat
-  const { blob, mimeType, dataUrl } = await optimizeImageToBlob(file, maxDimension, quality);
-  if (onProgress) onProgress(35);
-
-  // Prepare filename and path
+  // Generate unique file path
   const ext = mimeType === 'image/png' ? 'png' : mimeType === 'image/webp' ? 'webp' : 'jpg';
   const cleanName = file.name
     ? file.name.replace(/\.[^/.]+$/, '').replace(/[^a-zA-Z0-9_-]/g, '_').substring(0, 32)
-    : 'photo';
+    : 'image';
   const fileName = `${Date.now()}_${Math.random().toString(36).substring(2, 8)}_${cleanName}.${ext}`;
   const storagePath = `${folder}/${fileName}`;
 
-  // -----------------------------------------------------------------
-  // METHOD 1: Firebase Storage (Fast check with 2.5s strict timeout)
-  // -----------------------------------------------------------------
-  if (isFirebaseStorageAvailable !== false) {
-    try {
-      if (onProgress) onProgress(45);
-      const storageRef = ref(storage, storagePath);
+  // -------------------------------------------------------------
+  // PRIMARY METHOD: Direct Firebase Storage Upload
+  // -------------------------------------------------------------
+  try {
+    const storageRef = ref(storage, storagePath);
+    const metadata = {
+      contentType: mimeType,
+      customMetadata: {
+        originalName: file.name || 'image',
+        uploadedAt: new Date().toISOString(),
+      },
+    };
 
-      // Wrap uploadBytes in a 2.5-second timeout promise to prevent indefinite hanging
-      const storageUploadPromise = uploadBytes(storageRef, blob, {
-        contentType: mimeType,
-        customMetadata: { originalName: file.name || 'image' },
-      }).then(async (snapshot) => {
-        return await getDownloadURL(snapshot.ref);
-      });
+    const uploadTask = uploadBytesResumable(storageRef, blob, metadata);
 
-      const timeoutPromise = new Promise<never>((_, reject) =>
-        setTimeout(() => reject(new Error('Firebase Storage handshake timeout (bucket unreachable)')), 2500)
+    const downloadURL = await new Promise<string>((resolve, reject) => {
+      uploadTask.on(
+        'state_changed',
+        (snapshot) => {
+          if (snapshot.totalBytes > 0) {
+            const percent = Math.round((snapshot.bytesTransferred / snapshot.totalBytes) * 100);
+            if (onProgress) {
+              onProgress(percent);
+            }
+          }
+        },
+        (error) => {
+          console.warn('[Firebase Storage] Upload task error, switching to fallback:', error);
+          reject(error);
+        },
+        async () => {
+          try {
+            const url = await getDownloadURL(uploadTask.snapshot.ref);
+            resolve(url);
+          } catch (urlErr) {
+            reject(urlErr);
+          }
+        }
       );
+    });
 
-      const downloadURL = await Promise.race([storageUploadPromise, timeoutPromise]);
-
-      if (downloadURL) {
-        isFirebaseStorageAvailable = true;
-        if (onProgress) onProgress(100);
-        return downloadURL;
-      }
-    } catch (storageErr) {
-      console.warn('[Image Upload] Firebase Storage unavailable, seamlessly using server upload:', storageErr);
-      isFirebaseStorageAvailable = false;
+    if (downloadURL) {
+      if (onProgress) onProgress(100);
+      return downloadURL;
     }
+  } catch (storageErr) {
+    console.warn('[Firebase Storage] Direct bucket upload failed, attempting backend /api/upload fallback:', storageErr);
   }
 
-  // -----------------------------------------------------------------
-  // METHOD 2: High-Speed Full-Stack Server Upload (/api/upload)
-  // -----------------------------------------------------------------
+  // -------------------------------------------------------------
+  // SECONDARY FALLBACK: Backend /api/upload (Node.js Express Server)
+  // -------------------------------------------------------------
   try {
-    if (onProgress) onProgress(65);
-
-    // Get base64 representation of optimized blob
-    let payloadDataUrl = dataUrl;
-    if (!payloadDataUrl) {
-      payloadDataUrl = await new Promise<string>((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onloadend = () => resolve(reader.result as string);
-        reader.onerror = reject;
-        reader.readAsDataURL(blob);
-      });
-    }
-
-    if (onProgress) onProgress(80);
+    const dataUrl = await new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onloadend = () => resolve(reader.result as string);
+      reader.onerror = reject;
+      reader.readAsDataURL(blob);
+    });
 
     const res = await fetch('/api/upload', {
       method: 'POST',
@@ -201,7 +202,7 @@ export async function uploadImage(
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        image: payloadDataUrl,
+        image: dataUrl,
         filename: file.name || fileName,
       }),
     });
@@ -213,16 +214,16 @@ export async function uploadImage(
         return data.url;
       }
     }
-  } catch (serverErr) {
-    console.warn('[Image Upload] Server /api/upload failed, using compact fallback:', serverErr);
+  } catch (backendErr) {
+    console.warn('[Server Upload] /api/upload fallback failed:', backendErr);
   }
 
-  // -----------------------------------------------------------------
-  // METHOD 3: Emergency Ultra-Compact Thumbnail Fallback (< 75KB)
-  // Guarantees user never experiences a failed upload or Firestore document limit error
-  // -----------------------------------------------------------------
-  if (onProgress) onProgress(90);
-  const emergencyDataUrl = await compressImage(file, 800, 0.70);
+  // -------------------------------------------------------------
+  // EMERGENCY FALLBACK: Ultra-compact WebP thumbnail (< 70KB)
+  // Ensures Firestore never hits 1 MB limit even if storage & server are unreachable
+  // -------------------------------------------------------------
+  console.warn('[Image Upload] Utilizing emergency compact Data URL fallback');
+  const compactDataUrl = await compressImage(file, 800, 0.70);
   if (onProgress) onProgress(100);
-  return emergencyDataUrl;
+  return compactDataUrl;
 }

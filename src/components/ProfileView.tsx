@@ -90,16 +90,16 @@ export const ProfileView: React.FC = () => {
 
     try {
       setUploadingAvatar(true);
-      setAvatarProgress(15);
+      setAvatarProgress(10);
       const url = await uploadImage(file, {
         folder: 'avatars',
         onProgress: (p) => setAvatarProgress(p),
       });
       setPhotoURL(url);
-      setSaveMsg('Avatar uploaded successfully! Click "Save Profile" below to finish.');
+      setSaveMsg('Avatar uploaded to Firebase Storage! Click "Save Profile" to finish.');
     } catch (err: unknown) {
       console.error('Failed to upload avatar:', err);
-      alert('Failed to upload avatar image. Please try again.');
+      alert('Failed to upload avatar image to storage. Please try again.');
     } finally {
       setUploadingAvatar(false);
       setAvatarProgress(null);

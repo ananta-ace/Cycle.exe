@@ -167,20 +167,13 @@ export const CommunityFeed: React.FC = () => {
         for (let i = 0; i < selectedFiles.length; i++) {
           const file = selectedFiles[i];
           try {
-            const url = await uploadImage(file, {
-              folder: 'posts',
-              onProgress: (p) => {
-                const base = Math.round((i / selectedFiles.length) * 100);
-                const chunk = Math.round(p / selectedFiles.length);
-                setUploadProgress(Math.min(99, base + chunk));
-              },
-            });
+            setUploadProgress(Math.round(((i + 1) / selectedFiles.length) * 80));
+            const url = await uploadImage(file, { folder: 'posts' });
             uploadedUrls.push(url);
           } catch (fileErr) {
             console.error('File upload error:', fileErr);
           }
         }
-        setUploadProgress(100);
       }
 
       const postData: Omit<Post, 'id'> = {
