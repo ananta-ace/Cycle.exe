@@ -130,15 +130,15 @@ export const GalleryView: React.FC = () => {
 
     try {
       setUploading(true);
-      setUploadProgress(10);
+      setUploadProgress(15);
       setUploadError(null);
 
-      // Direct Firebase Storage upload with live progress tracking
+      // Fast, resilient upload with live progress tracking
       const photoURL = await uploadImage(uploadFile, {
         folder: 'gallery',
-        onProgress: (p) => setUploadProgress(Math.max(10, Math.min(95, p))),
+        onProgress: (p) => setUploadProgress(p),
       });
-      setUploadProgress(98);
+      setUploadProgress(100);
 
       const photoData: Omit<GalleryPhoto, 'id'> = {
         title: uploadTitle.trim(),
