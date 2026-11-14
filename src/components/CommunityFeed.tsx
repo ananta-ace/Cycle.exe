@@ -16,7 +16,7 @@ import { useAuth } from '../context/AuthContext';
 import { Post, PostComment } from '../types';
 import { ReportModal } from './ReportModal';
 import { ApplicationModal } from './ApplicationModal';
-import { uploadImage } from '../utils/imageUpload';
+import { uploadImage, isImageFile } from '../utils/imageUpload';
 
 export const CommunityFeed: React.FC = () => {
   const { user, profile, isMember, isSuperAdmin, isAdmin } = useAuth();
@@ -117,17 +117,14 @@ export const CommunityFeed: React.FC = () => {
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!e.target.files) return;
     const files = Array.from(e.target.files);
+    e.target.value = '';
 
     const validFiles: File[] = [];
     const previews: string[] = [];
 
     for (const f of files) {
-      if (!f.type.startsWith('image/')) {
+      if (!isImageFile(f)) {
         setPostError('Only image files (PNG, JPEG, WebP, GIF) are allowed.');
-        return;
-      }
-      if (f.size > 25 * 1024 * 1024) {
-        setPostError(`File "${f.name}" exceeds the 25MB maximum limit.`);
         return;
       }
       validFiles.push(f);
@@ -140,6 +137,10 @@ export const CommunityFeed: React.FC = () => {
   };
 
   const removeFile = (idx: number) => {
+    const previewToRevoke = filePreviews[idx];
+    if (previewToRevoke && previewToRevoke.startsWith('blob:')) {
+      URL.revokeObjectURL(previewToRevoke);
+    }
     setSelectedFiles((prev) => prev.filter((_, i) => i !== idx));
     setFilePreviews((prev) => prev.filter((_, i) => i !== idx));
   };
@@ -164,15 +165,19 @@ export const CommunityFeed: React.FC = () => {
       const uploadedUrls: string[] = [];
 
       if (selectedFiles.length > 0) {
+        const perPhotoMaxBytes = Math.floor(450_000 / selectedFiles.length);
         for (let i = 0; i < selectedFiles.length; i++) {
           const file = selectedFiles[i];
-          try {
-            setUploadProgress(Math.round(((i + 1) / selectedFiles.length) * 80));
-            const url = await uploadImage(file, { folder: 'posts' });
-            uploadedUrls.push(url);
-          } catch (fileErr) {
-            console.error('File upload error:', fileErr);
-          }
+          setUploadProgress(Math.round(((i + 0.3) / selectedFiles.length) * 90));
+          const url = await uploadImage(file, {
+            folder: 'posts',
+            maxBytes: perPhotoMaxBytes,
+            onProgress: (p) => {
+              const overall = Math.round(((i + p / 100) / selectedFiles.length) * 90);
+              setUploadProgress(Math.max(5, Math.min(95, overall)));
+            },
+          });
+          uploadedUrls.push(url);
         }
       }
 

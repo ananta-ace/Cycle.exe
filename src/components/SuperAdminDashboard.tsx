@@ -19,7 +19,7 @@ import {
   AdminMembershipApplication,
   Member,
 } from '../types';
-import { uploadImage } from '../utils/imageUpload';
+import { uploadImage, isImageFile } from '../utils/imageUpload';
 import { SuperAdminNoticesPanel } from './SuperAdminNoticesPanel';
 
 export const SuperAdminDashboard: React.FC = () => {
@@ -58,6 +58,8 @@ export const SuperAdminDashboard: React.FC = () => {
   const [newBadgeText, setNewBadgeText] = useState('');
   const [newRaceText, setNewRaceText] = useState('');
   const [uploadingFeatImg, setUploadingFeatImg] = useState(false);
+  const [featUploadProgress, setFeatUploadProgress] = useState<number | null>(null);
+  const [featUploadError, setFeatUploadError] = useState<string | null>(null);
   const [featSaving, setFeatSaving] = useState(false);
 
   // Applications
@@ -455,6 +457,8 @@ export const SuperAdminDashboard: React.FC = () => {
   const handleOpenEditFeatured = (m: Member) => {
     setEditingFeaturedMember(m);
     setIsCreatingCustomFeatured(false);
+    setFeatUploadError(null);
+    setFeatUploadProgress(null);
     setFeatName(m.name || '');
     setFeatTitle(m.title || '');
     setFeatImg(m.img || '');
@@ -470,6 +474,8 @@ export const SuperAdminDashboard: React.FC = () => {
   const handleOpenAddCustomFeatured = () => {
     setEditingFeaturedMember(null);
     setIsCreatingCustomFeatured(true);
+    setFeatUploadError(null);
+    setFeatUploadProgress(null);
     setFeatName('');
     setFeatTitle('Cycle.exe Crew Leader');
     setFeatImg('');
@@ -608,27 +614,31 @@ export const SuperAdminDashboard: React.FC = () => {
 
   const handleUploadFeatPhoto = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
+    e.target.value = '';
     if (!file) return;
 
-    if (!file.type.startsWith('image/')) {
-      alert('Please select an image file (PNG, JPG, WebP).');
-      return;
-    }
-
-    if (file.size > 30 * 1024 * 1024) {
-      alert('Image size must be under 30MB.');
+    if (!isImageFile(file)) {
+      setFeatUploadError('Please select a valid image file (PNG, JPG, WebP, GIF).');
       return;
     }
 
     try {
       setUploadingFeatImg(true);
-      const url = await uploadImage(file, { folder: 'featured' });
+      setFeatUploadError(null);
+      setFeatUploadProgress(10);
+      const url = await uploadImage(file, {
+        folder: 'featured',
+        onProgress: (p) => setFeatUploadProgress(p),
+      });
       setFeatImg(url);
-    } catch (err) {
+    } catch (err: unknown) {
       console.error('Upload error:', err);
-      alert('Failed to upload image. Please try again.');
+      setFeatUploadError(
+        err instanceof Error ? err.message : 'Failed to upload image. Please try again.'
+      );
     } finally {
       setUploadingFeatImg(false);
+      setFeatUploadProgress(null);
     }
   };
 
@@ -2167,7 +2177,7 @@ export const SuperAdminDashboard: React.FC = () => {
               {/* Photo Upload & Preview */}
               <div>
                 <label className="block text-xs font-black uppercase tracking-wider mb-1 text-zinc-800">
-                  Photo / Avatar Image
+                  Photo / Avatar Image (Supports Any Size)
                 </label>
                 <div className="flex items-center gap-4">
                   <div className="w-16 h-16 rounded-full border-2 border-zinc-900 bg-zinc-200 overflow-hidden flex items-center justify-center font-black text-xl text-zinc-700 shrink-0">
@@ -2179,24 +2189,71 @@ export const SuperAdminDashboard: React.FC = () => {
                   </div>
 
                   <div className="flex-1 space-y-2">
-                    <input
-                      type="text"
-                      value={featImg}
-                      onChange={(e) => setFeatImg(e.target.value)}
-                      placeholder="Image URL or upload below (e.g. /images/Ananta.png)"
-                      className="neo-input text-xs w-full p-2 font-mono"
-                    />
-                    <label className="inline-flex items-center gap-1.5 btn-secondary text-xs py-1.5 px-3 font-bold cursor-pointer">
-                      <i className={`fas ${uploadingFeatImg ? 'fa-spinner fa-spin' : 'fa-camera'}`}></i>
-                      <span>{uploadingFeatImg ? 'Uploading...' : 'Upload Image File'}</span>
+                    {featImg.startsWith('data:image/') ? (
+                      <div className="flex items-center justify-between gap-2 neo-input text-xs p-2 bg-emerald-50 border-emerald-500 text-emerald-900 font-bold">
+                        <span><i className="fas fa-check-circle mr-1"></i> Uploaded image ready (visible to all)</span>
+                        <button
+                          type="button"
+                          onClick={() => setFeatImg('')}
+                          className="text-red-600 hover:text-red-800 font-bold underline"
+                        >
+                          Clear
+                        </button>
+                      </div>
+                    ) : (
                       <input
-                        type="file"
-                        accept="image/*"
-                        onChange={handleUploadFeatPhoto}
-                        className="hidden"
-                        disabled={uploadingFeatImg}
+                        type="text"
+                        value={featImg}
+                        onChange={(e) => setFeatImg(e.target.value)}
+                        placeholder="Image URL or upload below (e.g. /images/Ananta.png)"
+                        className="neo-input text-xs w-full p-2 font-mono"
                       />
-                    </label>
+                    )}
+                    <div className="flex flex-wrap items-center gap-2">
+                      <label className={`inline-flex items-center gap-1.5 btn-secondary text-xs py-1.5 px-3 font-bold cursor-pointer ${uploadingFeatImg ? 'opacity-60 pointer-events-none' : ''}`}>
+                        <i className={`fas ${uploadingFeatImg ? 'fa-spinner fa-spin' : 'fa-camera'}`}></i>
+                        <span>
+                          {uploadingFeatImg
+                            ? `Uploading${featUploadProgress !== null ? ` (${featUploadProgress}%)` : '...'}`
+                            : 'Upload Image File (Any Size)'}
+                        </span>
+                        <input
+                          type="file"
+                          accept="image/*"
+                          onChange={handleUploadFeatPhoto}
+                          className="hidden"
+                          disabled={uploadingFeatImg}
+                        />
+                      </label>
+
+                      {editingFeaturedMember?.userId && (() => {
+                        const matched = allUsers.find((u) => u.id === editingFeaturedMember.userId);
+                        if (!matched?.photoURL) return null;
+                        return (
+                          <button
+                            type="button"
+                            onClick={() => setFeatImg(matched.photoURL)}
+                            className="inline-flex items-center gap-1.5 text-xs py-1.5 px-3 font-bold rounded-xl border-2 border-zinc-900 bg-amber-50 hover:bg-[#f9c74f] text-zinc-900 transition"
+                          >
+                            <i className="fas fa-sync-alt text-amber-700"></i>
+                            <span>Use Rider&apos;s Profile Pic</span>
+                          </button>
+                        );
+                      })()}
+                    </div>
+                    {featUploadProgress !== null && (
+                      <div className="w-full h-1.5 bg-zinc-200 rounded-full overflow-hidden">
+                        <div
+                          className="h-full bg-emerald-500 transition-all duration-200"
+                          style={{ width: `${featUploadProgress}%` }}
+                        ></div>
+                      </div>
+                    )}
+                    {featUploadError && (
+                      <div className="p-2 bg-red-50 border border-red-400 rounded-xl text-xs font-bold text-red-700">
+                        {featUploadError}
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>

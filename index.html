@@ -15,6 +15,7 @@
   <script>
     // GitHub Pages trailing-slash auto-redirect so relative assets (./assets/...) resolve properly
     (function () {
+      if (!window.location.hostname.endsWith('github.io')) return;
       var p = window.location.pathname;
       if (p && !p.endsWith('/') && !p.split('/').pop().includes('.')) {
         window.location.replace(p + '/' + window.location.search + window.location.hash);

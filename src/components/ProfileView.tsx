@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useAuth, DESIGNATED_SUPER_ADMIN_EMAIL } from '../context/AuthContext';
-import { uploadImage } from '../utils/imageUpload';
+import { uploadImage, isImageFile } from '../utils/imageUpload';
 
 export const ProfileView: React.FC = () => {
   const {
@@ -20,8 +20,17 @@ export const ProfileView: React.FC = () => {
   const [isEditing, setIsEditing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saveMsg, setSaveMsg] = useState<string | null>(null);
+  const [saveError, setSaveError] = useState<string | null>(null);
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
   const [avatarProgress, setAvatarProgress] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (!isEditing && profile) {
+      setDisplayName(profile.displayName || '');
+      setBio(profile.bio || '');
+      setPhotoURL(profile.photoURL || '');
+    }
+  }, [profile, isEditing]);
 
   // Invitation code state
   const [inviteCode, setInviteCode] = useState('');
@@ -43,12 +52,13 @@ export const ProfileView: React.FC = () => {
     try {
       setSaving(true);
       setSaveMsg(null);
+      setSaveError(null);
       await updateProfileDetails(displayName, bio, photoURL);
       setSaveMsg('Profile saved successfully!');
       setIsEditing(false);
-      setTimeout(() => setSaveMsg(null), 3000);
+      setTimeout(() => setSaveMsg(null), 3500);
     } catch (err: unknown) {
-      alert(err instanceof Error ? err.message : 'Failed to update profile');
+      setSaveError(err instanceof Error ? err.message : 'Failed to update profile');
     } finally {
       setSaving(false);
     }
@@ -75,31 +85,37 @@ export const ProfileView: React.FC = () => {
   };
 
   const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (!e.target.files?.[0]) return;
-    const file = e.target.files[0];
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
 
-    if (!file.type.startsWith('image/')) {
-      alert('Please select a valid image file (PNG, JPG, WebP).');
-      return;
-    }
-
-    if (file.size > 30 * 1024 * 1024) {
-      alert('Avatar image must be under 30MB.');
+    if (!isImageFile(file)) {
+      setSaveError('Please select a valid image file (PNG, JPG, WebP, GIF).');
       return;
     }
 
     try {
       setUploadingAvatar(true);
+      setSaveError(null);
+      setSaveMsg(null);
       setAvatarProgress(10);
       const url = await uploadImage(file, {
         folder: 'avatars',
         onProgress: (p) => setAvatarProgress(p),
       });
       setPhotoURL(url);
-      setSaveMsg('Avatar uploaded to Firebase Storage! Click "Save Profile" to finish.');
+      await updateProfileDetails(
+        displayName || profile?.displayName || user.displayName || 'Cyclist',
+        bio || profile?.bio || '',
+        url
+      );
+      setSaveMsg('Profile photo uploaded and saved for everyone!');
+      setTimeout(() => setSaveMsg(null), 4000);
     } catch (err: unknown) {
       console.error('Failed to upload avatar:', err);
-      alert('Failed to upload avatar image to storage. Please try again.');
+      setSaveError(
+        err instanceof Error ? err.message : 'Failed to upload avatar image. Please try again.'
+      );
     } finally {
       setUploadingAvatar(false);
       setAvatarProgress(null);
@@ -121,7 +137,7 @@ export const ProfileView: React.FC = () => {
                   </span>
                 </div>
               ) : null}
-              {profile?.photoURL || photoURL ? (
+              {photoURL || profile?.photoURL ? (
                 <img
                   src={photoURL || profile?.photoURL}
                   alt={profile?.displayName}
@@ -131,22 +147,21 @@ export const ProfileView: React.FC = () => {
                 profile?.displayName?.charAt(0).toUpperCase() || 'U'
               )}
             </div>
-            {isEditing && (
-              <label
-                className={`absolute bottom-0 right-0 w-9 h-9 rounded-full bg-[#1e1e1e] text-[#f9c74f] border-2 border-zinc-900 flex items-center justify-center cursor-pointer text-sm hover:bg-[#b45309] shadow-md ${
-                  uploadingAvatar ? 'opacity-50 pointer-events-none' : ''
-                }`}
-              >
-                <i className={uploadingAvatar ? 'fas fa-spinner fa-spin' : 'fas fa-camera'}></i>
-                <input
-                  type="file"
-                  accept="image/*"
-                  onChange={handleAvatarUpload}
-                  disabled={uploadingAvatar}
-                  className="hidden"
-                />
-              </label>
-            )}
+            <label
+              title="Upload profile picture (any size)"
+              className={`absolute bottom-0 right-0 w-9 h-9 rounded-full bg-[#1e1e1e] text-[#f9c74f] border-2 border-zinc-900 flex items-center justify-center cursor-pointer text-sm hover:bg-[#b45309] shadow-md ${
+                uploadingAvatar ? 'opacity-50 pointer-events-none' : ''
+              }`}
+            >
+              <i className={uploadingAvatar ? 'fas fa-spinner fa-spin' : 'fas fa-camera'}></i>
+              <input
+                type="file"
+                accept="image/*"
+                onChange={handleAvatarUpload}
+                disabled={uploadingAvatar}
+                className="hidden"
+              />
+            </label>
           </div>
 
           <div className="flex-1 text-center md:text-left">
@@ -166,6 +181,12 @@ export const ProfileView: React.FC = () => {
               {profile?.bio || <span className="italic text-zinc-400">No bio written yet. Click edit to add your cycling background, favorite bike, and routes!</span>}
             </div>
 
+            {saveError && (
+              <div className="p-3 mb-4 bg-red-50 border border-red-500 rounded-xl text-xs font-bold text-red-700">
+                {saveError}
+              </div>
+            )}
+
             {saveMsg && (
               <div className="p-3 mb-4 bg-emerald-50 border border-emerald-500 rounded-xl text-xs font-bold text-emerald-800">
                 {saveMsg}
@@ -175,7 +196,15 @@ export const ProfileView: React.FC = () => {
             <div className="flex flex-wrap justify-center md:justify-start gap-3">
               <button
                 type="button"
-                onClick={() => setIsEditing(!isEditing)}
+                onClick={() => {
+                  if (!isEditing && profile) {
+                    setDisplayName(profile.displayName || '');
+                    setBio(profile.bio || '');
+                    setPhotoURL(profile.photoURL || '');
+                  }
+                  setSaveError(null);
+                  setIsEditing(!isEditing);
+                }}
                 className="btn-secondary text-xs py-1.5 px-4"
               >
                 <i className={`fas ${isEditing ? 'fa-times' : 'fa-edit'}`}></i>{' '}
@@ -209,14 +238,27 @@ export const ProfileView: React.FC = () => {
                 />
               </div>
               <div>
-                <label className="block text-xs font-bold mb-1 text-zinc-700">Profile Photo URL (or use camera icon)</label>
-                <input
-                  type="url"
-                  value={photoURL}
-                  onChange={(e) => setPhotoURL(e.target.value)}
-                  placeholder="https://..."
-                  className="neo-input text-sm py-2"
-                />
+                <label className="block text-xs font-bold mb-1 text-zinc-700">Profile Photo (camera icon accepts any size)</label>
+                {photoURL.startsWith('data:image/') ? (
+                  <div className="flex items-center justify-between gap-2 neo-input text-xs py-2 bg-emerald-50 border-emerald-500 text-emerald-900 font-bold">
+                    <span><i className="fas fa-check-circle mr-1"></i> Uploaded photo ready</span>
+                    <button
+                      type="button"
+                      onClick={() => setPhotoURL('')}
+                      className="text-red-600 hover:text-red-800 font-bold underline"
+                    >
+                      Clear
+                    </button>
+                  </div>
+                ) : (
+                  <input
+                    type="text"
+                    value={photoURL}
+                    onChange={(e) => setPhotoURL(e.target.value)}
+                    placeholder="https://... or upload via camera icon"
+                    className="neo-input text-sm py-2"
+                  />
+                )}
               </div>
             </div>
 

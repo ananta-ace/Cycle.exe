@@ -307,8 +307,9 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     customTitle?: string
   ) => {
     if (!user) return;
+    const trimmedName = displayName.trim() || profile?.displayName || 'Cyclist';
     const updates: Partial<UserProfile> = {
-      displayName: displayName.trim(),
+      displayName: trimmedName,
       bio: bio.trim(),
       updatedAt: new Date().toISOString(),
     };
@@ -316,11 +317,26 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     if (customTitle !== undefined) updates.customTitle = customTitle.trim();
 
     await updateDoc(doc(db, 'users', user.uid), updates);
+    setProfile((prev) => (prev ? { ...prev, ...updates } : prev));
+
     if (auth.currentUser) {
-      await updateProfile(auth.currentUser, {
-        displayName,
-        photoURL: photoURL || auth.currentUser.photoURL,
-      });
+      try {
+        const authUpdates: { displayName?: string; photoURL?: string } = {
+          displayName: trimmedName,
+        };
+        if (
+          photoURL &&
+          !photoURL.startsWith('data:') &&
+          photoURL.length <= 1800
+        ) {
+          authUpdates.photoURL = photoURL.startsWith('/')
+            ? `${window.location.origin}${photoURL}`
+            : photoURL;
+        }
+        await updateProfile(auth.currentUser, authUpdates);
+      } catch (authProfileErr) {
+        console.warn('Non-fatal Firebase Auth profile sync notice:', authProfileErr);
+      }
     }
   };
 

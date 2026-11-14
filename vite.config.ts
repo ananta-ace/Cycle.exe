@@ -6,7 +6,7 @@ import fs from 'fs';
 import path from 'path';
 
 export default defineConfig({
-  base: process.env.NODE_ENV === 'production' ? (process.env.VITE_BASE_PATH || './') : '/',
+  base: process.env.VITE_BASE_PATH || (process.env.GITHUB_ACTIONS ? './' : '/'),
   plugins: [
     react(),
     tailwindcss(),
@@ -32,5 +32,6 @@ export default defineConfig({
     port: 3000,
     host: '0.0.0.0',
     allowedHosts: true,
+    hmr: false,
   },
 });

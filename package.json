@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "tsx server.ts",
     "build": "tsc && vite build",
-    "predeploy": "npm run build",
+    "predeploy": "VITE_BASE_PATH=./ npm run build",
     "deploy": "gh-pages -d dist",
     "start": "node server.ts",
     "lint": "tsc --noEmit",

@@ -11,7 +11,7 @@ import {
 import { db } from '../firebase';
 import { useAuth } from '../context/AuthContext';
 import { GalleryPhoto } from '../types';
-import { uploadImage } from '../utils/imageUpload';
+import { uploadImage, isImageFile } from '../utils/imageUpload';
 
 export const GalleryView: React.FC = () => {
   const { isSuperAdmin, user, profile } = useAuth();
@@ -97,15 +97,20 @@ export const GalleryView: React.FC = () => {
     return () => unsub();
   }, []);
 
+  useEffect(() => {
+    return () => {
+      if (filePreview && filePreview.startsWith('blob:')) {
+        URL.revokeObjectURL(filePreview);
+      }
+    };
+  }, [filePreview]);
+
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (!e.target.files || !e.target.files[0]) return;
-    const file = e.target.files[0];
-    if (!file.type.startsWith('image/')) {
-      setUploadError('Only image files (JPEG, PNG, WebP) are allowed.');
-      return;
-    }
-    if (file.size > 30 * 1024 * 1024) {
-      setUploadError('Image size must be under 30MB.');
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    if (!isImageFile(file)) {
+      setUploadError('Only image files (JPEG, PNG, WebP, GIF) are allowed.');
       return;
     }
     setUploadError(null);
@@ -116,7 +121,7 @@ export const GalleryView: React.FC = () => {
   const handleUploadSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!isSuperAdmin) {
-      alert('Only the Super Admin can upload photos to the official gallery.');
+      setUploadError('Only the Super Admin can upload photos to the official gallery.');
       return;
     }
     if (!uploadTitle.trim()) {
@@ -454,7 +459,7 @@ export const GalleryView: React.FC = () => {
                   className="block w-full text-xs text-zinc-600 file:mr-3 file:py-2 file:px-4 file:rounded-xl file:border-2 file:border-[#1e1e1e] file:text-xs file:font-black file:bg-[#f9c74f] file:text-black hover:file:bg-[#e0b040] cursor-pointer"
                 />
                 <span className="text-[11px] text-zinc-500 font-bold block mt-1">
-                  <i className="fas fa-cloud-upload-alt mr-1 text-emerald-600"></i> Firebase Storage: supports high-resolution photos up to 30MB (JPEG, PNG, WebP)
+                  <i className="fas fa-cloud-upload-alt mr-1 text-emerald-600"></i> Supports photos of any size (JPEG, PNG, WebP, GIF) — auto-optimized and shared with all riders
                 </span>
               </div>
 

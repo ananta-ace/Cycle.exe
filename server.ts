@@ -12,9 +12,25 @@ import {
   setDoc as serverSetDoc,
 } from 'firebase/firestore';
 
+function getArgValue(flag: string): string | undefined {
+  const idx = process.argv.indexOf(flag);
+  if (idx !== -1 && idx + 1 < process.argv.length) return process.argv[idx + 1];
+  const eq = process.argv.find((a) => a.startsWith(`${flag}=`));
+  return eq ? eq.slice(flag.length + 1) : undefined;
+}
+
+const isProduction = process.env.NODE_ENV === 'production';
+const cliPort = getArgValue('--port');
+const cliHost = getArgValue('--host');
 const app = express();
-const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
-const HOST = '0.0.0.0';
+const PORT = cliPort
+  ? parseInt(cliPort, 10)
+  : !isProduction && process.env.DEFAULT_APP_PORT
+    ? parseInt(process.env.DEFAULT_APP_PORT, 10)
+    : process.env.PORT
+      ? parseInt(process.env.PORT, 10)
+      : 3000;
+const HOST = cliHost || '0.0.0.0';
 
 // -------------------------------------------------------------
 const DESIGNATED_SUPER_ADMIN_UID = 'oups31O1uCVp6XAOqLAmr0zr5aK2';
@@ -49,8 +65,8 @@ const serverApp =
 const serverDb = initServerFirestore(serverApp, firebaseConfig.firestoreDatabaseId);
 
 app.use(cors());
-app.use(express.json({ limit: '50mb' }));
-app.use(express.urlencoded({ limit: '50mb', extended: true }));
+app.use(express.json({ limit: '100mb' }));
+app.use(express.urlencoded({ limit: '100mb', extended: true }));
 
 // Serve uploaded images statically
 const uploadsDir = path.resolve(process.cwd(), 'public', 'uploads');
@@ -944,11 +960,16 @@ app.post('/api/notices/mark-read', async (req: Request, res: Response) => {
 // Vite Dev Server / Static File Serving
 // -------------------------------------------------------------
 async function startServer() {
-  const isProduction = process.env.NODE_ENV === 'production';
+  app.use('/api', (_req: Request, res: Response) => {
+    return res.status(404).json({ error: 'API endpoint not found' });
+  });
 
-  if (!isProduction) {
+  const distPath = path.resolve(process.cwd(), 'dist');
+  const distIndexPath = path.join(distPath, 'index.html');
+
+  if (!isProduction || !fs.existsSync(distIndexPath)) {
     const vite = await createViteServer({
-      server: { middlewareMode: true },
+      server: { middlewareMode: true, hmr: false },
       appType: 'spa',
     });
     app.use(vite.middlewares);
@@ -956,7 +977,12 @@ async function startServer() {
     // Explicit fallback for SPA routes in dev mode (Express 5 compatible)
     app.use(async (req: Request, res: Response, next) => {
       const url = req.originalUrl;
-      if (url.startsWith('/api/')) return next();
+      if (url.startsWith('/api/')) {
+        return res.status(404).json({ error: 'API endpoint not found' });
+      }
+      if (req.path !== '/' && path.extname(req.path) && path.extname(req.path) !== '.html') {
+        return next();
+      }
       try {
         let template = fs.readFileSync(path.resolve(process.cwd(), 'index.html'), 'utf-8');
         template = await vite.transformIndexHtml(url, template);
@@ -967,13 +993,16 @@ async function startServer() {
       }
     });
   } else {
-    const distPath = path.resolve(process.cwd(), 'dist');
-    if (fs.existsSync(distPath)) {
-      app.use(express.static(distPath));
-      app.use((_req: Request, res: Response) => {
-        res.sendFile(path.resolve(distPath, 'index.html'));
-      });
-    }
+    app.use(express.static(distPath));
+    app.use((req: Request, res: Response, next) => {
+      if (req.originalUrl.startsWith('/api/')) {
+        return res.status(404).json({ error: 'API endpoint not found' });
+      }
+      if (req.path !== '/' && path.extname(req.path) && path.extname(req.path) !== '.html') {
+        return next();
+      }
+      res.sendFile(distIndexPath);
+    });
   }
 
   app.listen(PORT, HOST, async () => {

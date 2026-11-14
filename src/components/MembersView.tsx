@@ -16,9 +16,32 @@ export const MembersView: React.FC<MembersViewProps> = ({
 }) => {
   const { profile, isSuperAdmin } = useAuth();
   const [members, setMembers] = useState<Member[]>([]);
+  const [userPhotoMap, setUserPhotoMap] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
   const [failedImages, setFailedImages] = useState<Record<string, boolean>>({});
   const [ratingTarget, setRatingTarget] = useState<Member | null>(null);
+
+  // Sync user profile photos as fallback for featured riders whose card img is empty
+  useEffect(() => {
+    const uq = query(collection(db, 'users'));
+    const unsubUsers = onSnapshot(
+      uq,
+      (snapshot) => {
+        const photos: Record<string, string> = {};
+        snapshot.forEach((d) => {
+          const photo = d.data()?.photoURL;
+          if (typeof photo === 'string' && photo) {
+            photos[d.id] = photo;
+          }
+        });
+        setUserPhotoMap(photos);
+      },
+      () => {
+        // Non-fatal fallback
+      }
+    );
+    return () => unsubUsers();
+  }, []);
 
   // Real-time synchronization of Featured Members exclusively managed by Super Admin
   useEffect(() => {
@@ -61,8 +84,8 @@ export const MembersView: React.FC<MembersViewProps> = ({
     return () => unsub();
   }, []);
 
-  const handleImageError = (id: string) => {
-    setFailedImages((prev) => ({ ...prev, [id]: true }));
+  const handleImageError = (key: string) => {
+    setFailedImages((prev) => ({ ...prev, [key]: true }));
   };
 
   const handleOpenRating = (e: React.MouseEvent, m: Member) => {
@@ -179,8 +202,11 @@ export const MembersView: React.FC<MembersViewProps> = ({
       {/* Featured Members Grid */}
       {!loading && members.length > 0 && (
         <div className="group-grid">
-          {members.map((member) => {
-            const isFailed = failedImages[member.id];
+          {members.map((rawMember) => {
+            const resolvedImg = rawMember.img || (rawMember.userId ? userPhotoMap[rawMember.userId] : '') || '';
+            const member = resolvedImg !== rawMember.img ? { ...rawMember, img: resolvedImg } : rawMember;
+            const imgKey = `${member.id}:${member.img}`;
+            const isFailed = failedImages[imgKey];
             const cardClass = `card ${!member.active ? 'inactive' : ''}`;
             const statusClass = `status-badge ${member.active ? 'active' : 'inactive'}`;
             const attendClass = `attend-badge ${
@@ -223,7 +249,7 @@ export const MembersView: React.FC<MembersViewProps> = ({
                     <img
                       src={member.img}
                       alt={member.name}
-                      onError={() => handleImageError(member.id)}
+                      onError={() => handleImageError(imgKey)}
                     />
                   ) : null}
                   {(isFailed || !member.img) && (
