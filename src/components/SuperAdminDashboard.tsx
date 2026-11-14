@@ -11,7 +11,7 @@ import {
   doc,
 } from 'firebase/firestore';
 import { db } from '../firebase';
-import { useAuth, DESIGNATED_SUPER_ADMIN_EMAIL } from '../context/AuthContext';
+import { useAuth, isSuperAdminEmail } from '../context/AuthContext';
 import {
   UserProfile,
   InvitationCodeSummary,
@@ -254,6 +254,7 @@ export const SuperAdminDashboard: React.FC = () => {
       await updateDoc(doc(db, 'users', targetUserId), {
         isAdminMember: false,
         adminMembershipStatus: 'SUSPENDED',
+        role: 'PUBLIC',
         isSuspended: true,
         updatedAt: now,
       });
@@ -291,6 +292,7 @@ export const SuperAdminDashboard: React.FC = () => {
       const now = new Date().toISOString();
       await updateDoc(doc(db, 'users', targetUserId), {
         isAdminMember: true,
+        role: 'ADMIN',
         adminMembershipStatus: 'APPROVED',
         isSuspended: false,
         updatedAt: now,
@@ -324,7 +326,7 @@ export const SuperAdminDashboard: React.FC = () => {
   // Remove someone from the Admin Member panel without deleting their account
   const handleRemoveFromAdminPanel = async (targetUserId: string, name: string) => {
     if (!user || !isSuperAdmin) return;
-    if (!confirm(`Are you sure you want to remove ${name} from the Admin Member directory? Their regular account and personal data will be preserved.`)) return;
+    if (!confirm(`Are you sure you want to remove ${name} as an Admin Member? Their regular account and personal data will be preserved, and they can re-apply from Home.`)) return;
 
     try {
       const now = new Date().toISOString();
@@ -332,19 +334,35 @@ export const SuperAdminDashboard: React.FC = () => {
         isAdminMember: false,
         adminMembershipStatus: 'NONE',
         role: 'PUBLIC',
+        isSuspended: false,
         updatedAt: now,
       });
 
       try {
         await updateDoc(doc(db, 'applications', targetUserId), {
           status: 'REJECTED',
+          rejectionReason: 'Admin membership removed by Super Admin. You may re-apply.',
           updatedAt: now,
         });
       } catch {
-        // Fallback
+        // App record might not exist if promoted via role/code
       }
 
-      alert(`Removed ${name} from Admin Member directory.`);
+      try {
+        await addDoc(collection(db, 'notifications'), {
+          recipientId: targetUserId,
+          type: 'STATUS_CHANGED',
+          title: 'Admin Membership Removed',
+          message:
+            'Your Admin Member role has been removed by the Super Admin. You may re-apply from the Home screen whenever ready.',
+          isRead: false,
+          createdAt: now,
+        });
+      } catch {
+        // Non-critical notification fallback
+      }
+
+      alert(`Removed ${name} as an Admin Member.`);
     } catch (err: unknown) {
       console.error('Error removing from panel:', err);
       alert(err instanceof Error ? err.message : 'Failed to remove from panel');
@@ -699,12 +717,20 @@ export const SuperAdminDashboard: React.FC = () => {
   // Super Admin change role
   const handleChangeRole = async (targetUser: UserProfile, newRole: string) => {
     if (!user) return;
-    if (targetUser.email.toLowerCase() === DESIGNATED_SUPER_ADMIN_EMAIL.toLowerCase()) {
-      alert('The Super Admin account role cannot be changed.');
+    if (isSuperAdminEmail(targetUser.email)) {
+      alert('A designated Super Admin account role cannot be changed.');
       return;
     }
 
     try {
+      const now = new Date().toISOString();
+      const becomingAdmin = newRole === 'ADMIN';
+      const leavingAdmin =
+        !becomingAdmin &&
+        (targetUser.role === 'ADMIN' ||
+          targetUser.isAdminMember === true ||
+          targetUser.adminMembershipStatus === 'APPROVED');
+
       // 1. Server audit check
       await fetch('/api/admin/roles', {
         method: 'POST',
@@ -722,11 +748,35 @@ export const SuperAdminDashboard: React.FC = () => {
         }),
       });
 
-      // 2. Update Firestore document
-      await updateDoc(doc(db, 'users', targetUser.id), {
+      // 2. Update Firestore document & keep Admin Member status in sync
+      const userUpdates: Record<string, unknown> = {
         role: newRole,
-        updatedAt: new Date().toISOString(),
-      });
+        updatedAt: now,
+      };
+      if (becomingAdmin) {
+        userUpdates.isAdminMember = true;
+        userUpdates.adminMembershipStatus = 'APPROVED';
+        userUpdates.isSuspended = false;
+      } else if (leavingAdmin) {
+        userUpdates.isAdminMember = false;
+        userUpdates.adminMembershipStatus = 'NONE';
+      }
+
+      await updateDoc(doc(db, 'users', targetUser.id), userUpdates);
+
+      if (becomingAdmin || leavingAdmin) {
+        try {
+          await updateDoc(doc(db, 'applications', targetUser.id), {
+            status: becomingAdmin ? 'APPROVED' : 'REJECTED',
+            ...(leavingAdmin
+              ? { rejectionReason: 'Admin membership removed by Super Admin. You may re-apply.' }
+              : {}),
+            updatedAt: now,
+          });
+        } catch {
+          // User may not have an application document
+        }
+      }
 
       fetchStats();
     } catch (err) {
@@ -738,8 +788,8 @@ export const SuperAdminDashboard: React.FC = () => {
   // Toggle account suspension
   const handleToggleSuspend = async (targetUser: UserProfile) => {
     if (!user) return;
-    if (targetUser.email.toLowerCase() === DESIGNATED_SUPER_ADMIN_EMAIL.toLowerCase()) {
-      alert('The Super Admin account cannot be suspended.');
+    if (isSuperAdminEmail(targetUser.email)) {
+      alert('A designated Super Admin account cannot be suspended.');
       return;
     }
 
@@ -786,10 +836,10 @@ export const SuperAdminDashboard: React.FC = () => {
 
   // Calculate real metrics from Firestore users list
   const totalUsers = allUsers.length;
-  const publicCount = allUsers.filter((u) => u.role === 'PUBLIC').length;
+  const publicCount = allUsers.filter((u) => u.role === 'PUBLIC' || (u.role === 'SUPER_ADMIN' && !isSuperAdminEmail(u.email))).length;
   const memberCount = allUsers.filter((u) => u.role === 'MEMBER').length;
   const adminCount = allUsers.filter((u) => u.role === 'ADMIN').length;
-  const superAdminCount = allUsers.filter((u) => u.role === 'SUPER_ADMIN').length;
+  const superAdminCount = allUsers.filter((u) => isSuperAdminEmail(u.email)).length;
 
   const filteredUsers = allUsers.filter(
     (u) =>
@@ -1466,7 +1516,8 @@ export const SuperAdminDashboard: React.FC = () => {
                     </td>
                   </tr>
                 ) : filteredUsers.map((u) => {
-                  const isOwner = u.email.toLowerCase() === DESIGNATED_SUPER_ADMIN_EMAIL.toLowerCase();
+                  const isOwner = isSuperAdminEmail(u.email);
+                  const displayRole = isOwner ? 'SUPER_ADMIN' : u.role === 'SUPER_ADMIN' ? 'PUBLIC' : u.role;
 
                   return (
                     <tr
@@ -1500,8 +1551,8 @@ export const SuperAdminDashboard: React.FC = () => {
                       <td className="text-xs text-zinc-600">{u.email}</td>
                       <td>
                         <div className="flex items-center gap-1">
-                          <span className={`role-badge ${u.role}`}>{u.role}</span>
-                          {u.isAdminMember && (
+                          <span className={`role-badge ${displayRole}`}>{displayRole}</span>
+                          {u.isAdminMember && !isOwner && (
                             <span className="text-[10px] bg-amber-100 text-amber-900 font-black px-1.5 py-0.5 rounded border border-amber-300">
                               Admin Member
                             </span>
@@ -1569,7 +1620,7 @@ export const SuperAdminDashboard: React.FC = () => {
                             </button>
 
                             <select
-                              value={u.role}
+                              value={displayRole}
                               onChange={(e) => handleChangeRole(u, e.target.value)}
                               className="text-xs font-bold py-1 px-2 rounded-lg border border-zinc-900 bg-white"
                             >
@@ -1577,6 +1628,18 @@ export const SuperAdminDashboard: React.FC = () => {
                               <option value="MEMBER">MEMBER</option>
                               <option value="ADMIN">ADMIN</option>
                             </select>
+
+                            {(u.role === 'ADMIN' || u.isAdminMember || u.adminMembershipStatus === 'APPROVED') && (
+                              <button
+                                type="button"
+                                onClick={() => handleRemoveFromAdminPanel(u.id, u.displayName)}
+                                title={`Kick ${u.displayName} out as Admin Member`}
+                                className="px-2 py-1 rounded-lg border border-rose-700 bg-rose-50 hover:bg-rose-100 text-rose-800 text-xs font-bold flex items-center gap-1"
+                              >
+                                <i className="fas fa-user-minus"></i>
+                                <span className="hidden xl:inline">Remove Admin</span>
+                              </button>
+                            )}
 
                             <button
                               type="button"
@@ -2045,12 +2108,12 @@ export const SuperAdminDashboard: React.FC = () => {
                 )}
               </div>
 
-              {inspectingUser.email.toLowerCase() !== DESIGNATED_SUPER_ADMIN_EMAIL.toLowerCase() && (
+              {!isSuperAdminEmail(inspectingUser.email) && (
                 <div className="flex items-center justify-between gap-2 pt-2">
                   <div className="flex items-center gap-2">
                     <span className="text-xs font-bold text-zinc-600">Change Role:</span>
                     <select
-                      value={inspectingUser.role}
+                      value={inspectingUser.role === 'SUPER_ADMIN' ? 'PUBLIC' : inspectingUser.role}
                       onChange={(e) => {
                         handleChangeRole(inspectingUser, e.target.value);
                         setInspectingUser((prev) => prev ? { ...prev, role: e.target.value as any } : null);

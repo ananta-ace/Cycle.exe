@@ -207,7 +207,10 @@ export const GalleryView: React.FC = () => {
           <div className="mt-5">
             <button
               type="button"
-              onClick={() => setIsUploadOpen(true)}
+              onClick={() => {
+                setUploadError(null);
+                setIsUploadOpen(true);
+              }}
               className="btn-primary py-2.5 px-5 text-xs font-black inline-flex items-center gap-2 shadow-[0_4px_0_#1e1e1e]"
             >
               <i className="fas fa-cloud-upload-alt text-base"></i> Upload Photo to Gallery (Super Admin)
@@ -262,7 +265,7 @@ export const GalleryView: React.FC = () => {
                 <img
                   src={item.photoURL}
                   alt={item.title}
-                  loading="lazy"
+                  loading={item.photoURL.startsWith('data:') ? undefined : 'lazy'}
                   className="w-full h-full object-cover transition duration-300 group-hover:scale-105"
                 />
                 <div className="zoom-hint">
@@ -396,7 +399,12 @@ export const GalleryView: React.FC = () => {
             <button
               type="button"
               className="modal-close"
-              onClick={() => setIsUploadOpen(false)}
+              onClick={() => {
+                if (!uploading) {
+                  setUploadError(null);
+                  setIsUploadOpen(false);
+                }
+              }}
               aria-label="Close"
             >
               <i className="fas fa-times"></i>
@@ -453,11 +461,15 @@ export const GalleryView: React.FC = () => {
                 </label>
                 <input
                   type="file"
-                  required
                   accept="image/*"
                   onChange={handleFileChange}
                   className="block w-full text-xs text-zinc-600 file:mr-3 file:py-2 file:px-4 file:rounded-xl file:border-2 file:border-[#1e1e1e] file:text-xs file:font-black file:bg-[#f9c74f] file:text-black hover:file:bg-[#e0b040] cursor-pointer"
                 />
+                {uploadFile && (
+                  <p className="text-[11px] text-emerald-700 font-bold mt-1 truncate">
+                    <i className="fas fa-check-circle mr-1"></i> Selected: {uploadFile.name}
+                  </p>
+                )}
                 <span className="text-[11px] text-zinc-500 font-bold block mt-1">
                   <i className="fas fa-cloud-upload-alt mr-1 text-emerald-600"></i> Supports photos of any size (JPEG, PNG, WebP, GIF) — auto-optimized and shared with all riders
                 </span>
@@ -487,7 +499,10 @@ export const GalleryView: React.FC = () => {
               <div className="pt-2 flex items-center justify-end gap-2">
                 <button
                   type="button"
-                  onClick={() => setIsUploadOpen(false)}
+                  onClick={() => {
+                    setUploadError(null);
+                    setIsUploadOpen(false);
+                  }}
                   className="btn-secondary py-2 px-4 text-xs font-bold"
                   disabled={uploading}
                 >

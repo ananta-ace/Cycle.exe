@@ -18,13 +18,8 @@ service cloud.firestore {
 
     function isSuperAdmin() {
       return isSignedIn() && (
-        request.auth.uid == 'oups31O1uCVp6XAOqLAmr0zr5aK2' ||
-        (request.auth.token.email == 'tubedork@gmail.com' && request.auth.token.email_verified == true) ||
-        (request.auth.token.email == 'towhidulislamananta@gmail.com' && request.auth.token.email_verified == true) ||
-        (request.auth.token.email == 'atofaelislam@gmail.com' && request.auth.token.email_verified == true) ||
         (request.auth.token.email == 'ananta.base@gmail.com' && request.auth.token.email_verified == true) ||
-        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
-         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'SUPER_ADMIN')
+        (request.auth.token.email == 'towhidulislamananta@gmail.com' && request.auth.token.email_verified == true)
       );
     }
 
@@ -60,12 +55,11 @@ service cloud.firestore {
       allow list: if true;
 
       allow create: if isValidId(userId) && request.resource.data.id == userId && (
-        (userId == 'oups31O1uCVp6XAOqLAmr0zr5aK2' && request.resource.data.role == 'SUPER_ADMIN') ||
+        (isSuperAdmin() && request.resource.data.role == 'SUPER_ADMIN') ||
         (isSignedIn() && request.auth.uid == userId && request.resource.data.role == 'PUBLIC' && request.resource.data.isSuspended == false)
       );
 
       allow update: if isValidId(userId) && (
-        (userId == 'oups31O1uCVp6XAOqLAmr0zr5aK2' && request.resource.data.role == 'SUPER_ADMIN') ||
         isSuperAdmin() ||
         (
           isOwner(userId) &&
@@ -87,7 +81,7 @@ service cloud.firestore {
 
       // Private user info
       match /private/info {
-        allow read, write: if isValidId(userId) && (isOwner(userId) || isSuperAdmin() || userId == 'oups31O1uCVp6XAOqLAmr0zr5aK2');
+        allow read, write: if isValidId(userId) && (isOwner(userId) || isSuperAdmin());
       }
 
       // Member Ratings subcollection

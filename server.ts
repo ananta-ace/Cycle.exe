@@ -33,13 +33,10 @@ const PORT = cliPort
 const HOST = cliHost || '0.0.0.0';
 
 // -------------------------------------------------------------
-const DESIGNATED_SUPER_ADMIN_UID = 'oups31O1uCVp6XAOqLAmr0zr5aK2';
-const DESIGNATED_SUPER_ADMIN_EMAIL = 'tubedork@gmail.com';
+const DESIGNATED_SUPER_ADMIN_EMAIL = 'ananta.base@gmail.com';
 const AUTHORIZED_SUPER_ADMIN_EMAILS = [
-  'tubedork@gmail.com',
-  'towhidulislamananta@gmail.com',
-  'atofaelislam@gmail.com',
   'ananta.base@gmail.com',
+  'towhidulislamananta@gmail.com',
 ];
 
 function isSuperAdminEmail(email?: string | null): boolean {
@@ -47,12 +44,8 @@ function isSuperAdminEmail(email?: string | null): boolean {
   return AUTHORIZED_SUPER_ADMIN_EMAILS.includes(email.toLowerCase().trim());
 }
 
-function checkIsOwner(uid?: string | null, email?: string | null, role?: string | null): boolean {
-  return (
-    uid === DESIGNATED_SUPER_ADMIN_UID ||
-    role === 'SUPER_ADMIN' ||
-    isSuperAdminEmail(email)
-  );
+function checkIsOwner(_uid?: string | null, email?: string | null, _role?: string | null): boolean {
+  return isSuperAdminEmail(email);
 }
 
 // Initialize trusted server-side Firestore connection
@@ -144,10 +137,13 @@ function addAuditLog(
   return log;
 }
 
-// Trusted server-side bootstrap of the designated Super Admin
+// Trusted server-side bootstrap of an authorized Super Admin
 async function ensureSuperAdminConfigured(targetUid?: string, targetEmail?: string) {
-  const uid = targetUid || DESIGNATED_SUPER_ADMIN_UID;
-  const email = targetEmail || DESIGNATED_SUPER_ADMIN_EMAIL;
+  if (!targetUid || !targetEmail || !isSuperAdminEmail(targetEmail)) {
+    return;
+  }
+  const uid = targetUid;
+  const email = targetEmail.toLowerCase().trim();
   try {
     const userDocRef = serverDoc(serverDb, 'users', uid);
     const snap = await serverGetDoc(userDocRef);
@@ -213,44 +209,20 @@ function getAuthFromReq(req: Request) {
 // -------------------------------------------------------------
 
 // 0. Super Admin Status Verification (Server-Side Source of Truth)
-app.get('/api/admin/verify-super-admin', async (_req: Request, res: Response) => {
-  try {
-    const userDocRef = serverDoc(serverDb, 'users', DESIGNATED_SUPER_ADMIN_UID);
-    let snap = await serverGetDoc(userDocRef);
+app.get('/api/admin/verify-super-admin', async (req: Request, res: Response) => {
+  const { uid, email } = getAuthFromReq(req);
+  const authorized = isSuperAdminEmail(email);
 
-    if (!snap.exists() || snap.data()?.role !== 'SUPER_ADMIN') {
-      // Re-trigger server configuration
-      await ensureSuperAdminConfigured();
-      snap = await serverGetDoc(userDocRef);
-    }
-
-    if (snap.exists() && snap.data()?.role === 'SUPER_ADMIN') {
-      const data = snap.data();
-      return res.json({
-        configured: true,
-        status: 'CONFIRMED_ACTIVE',
-        superAdminUid: DESIGNATED_SUPER_ADMIN_UID,
-        email: data.email,
-        role: data.role,
-        displayName: data.displayName,
-        isSuspended: data.isSuspended,
-        verifiedAt: new Date().toISOString(),
-        details: 'User account is verified as the sole SUPER_ADMIN in Cloud Firestore and server state.',
-      });
-    }
-
-    return res.status(500).json({
-      configured: false,
-      status: 'CONFIGURATION_FAILED',
-      error: 'Failed to verify Super Admin role in database.',
-    });
-  } catch (err) {
-    return res.status(500).json({
-      configured: false,
-      status: 'ERROR',
-      error: err instanceof Error ? err.message : String(err),
-    });
-  }
+  return res.json({
+    configured: true,
+    status: authorized ? 'CONFIRMED_ACTIVE' : 'ALLOWLIST_ENFORCED',
+    authorizedSuperAdmins: AUTHORIZED_SUPER_ADMIN_EMAILS,
+    email: email || DESIGNATED_SUPER_ADMIN_EMAIL,
+    uid: uid || null,
+    role: authorized ? 'SUPER_ADMIN' : 'PUBLIC',
+    verifiedAt: new Date().toISOString(),
+    details: 'Only ananta.base@gmail.com and towhidulislamananta@gmail.com are authorized as Super Admin.',
+  });
 });
 
 // 1. Super Admin Bootstrap
@@ -261,17 +233,13 @@ app.post('/api/bootstrap-super-admin', async (req: Request, res: Response) => {
     return res.status(401).json({ error: 'Authentication required' });
   }
 
-  // Strict check on UID or authorized owner email
-  const isMatchUid = uid === DESIGNATED_SUPER_ADMIN_UID;
-  const isMatchEmail = isSuperAdminEmail(email);
-
-  if (!isMatchUid && !isMatchEmail) {
+  if (!isSuperAdminEmail(email)) {
     return res.status(403).json({
-      error: 'Forbidden: Only the designated owner account can hold the Super Admin role',
+      error: 'Forbidden: Only authorized owner accounts can hold the Super Admin role',
     });
   }
 
-  if (!verified && !isMatchUid) {
+  if (!verified) {
     return res.status(403).json({
       error: 'Email verification required before Super Admin bootstrap',
     });
@@ -293,7 +261,7 @@ app.post('/api/bootstrap-super-admin', async (req: Request, res: Response) => {
     success: true,
     role: 'SUPER_ADMIN',
     message: 'Super Admin successfully initialized',
-    superAdminUid: DESIGNATED_SUPER_ADMIN_UID,
+    superAdminUid: uid,
   });
 });
 
@@ -625,8 +593,9 @@ app.post('/api/invitations/redeem', async (req: Request, res: Response) => {
       {
         id: uid,
         role: targetRole,
-        isAdminMember: targetRole === 'ADMIN' ? true : undefined,
-        adminMembershipStatus: targetRole === 'ADMIN' ? 'APPROVED' : undefined,
+        ...(targetRole === 'ADMIN'
+          ? { isAdminMember: true, adminMembershipStatus: 'APPROVED' }
+          : {}),
         updatedAt: new Date().toISOString(),
       },
       { merge: true }
@@ -687,10 +656,7 @@ app.post('/api/admin/roles', (req: Request, res: Response) => {
     return res.status(400).json({ error: 'Target user ID required' });
   }
 
-  if (
-    targetUserId === DESIGNATED_SUPER_ADMIN_UID ||
-    targetUserEmail?.toLowerCase() === DESIGNATED_SUPER_ADMIN_EMAIL.toLowerCase()
-  ) {
+  if (isSuperAdminEmail(targetUserEmail)) {
     return res.status(400).json({ error: 'Super Admin account cannot be modified' });
   }
 
@@ -756,7 +722,7 @@ app.post('/api/admin/send-notice', async (req: Request, res: Response) => {
       recipientId,
       recipientName,
       recipientEmail,
-      senderId: uid || DESIGNATED_SUPER_ADMIN_UID,
+      senderId: uid || 'super-admin',
       senderName: 'Super Admin (Owner)',
       senderEmail: email || DESIGNATED_SUPER_ADMIN_EMAIL,
       senderRole: 'SUPER_ADMIN',
@@ -906,7 +872,7 @@ app.post('/api/notices/reply', async (req: Request, res: Response) => {
 
 // 12. Mark Notice as Read & Update Delivery Status
 app.post('/api/notices/mark-read', async (req: Request, res: Response) => {
-  const { uid } = getAuthFromReq(req);
+  const { uid, email } = getAuthFromReq(req);
   const { noticeId } = req.body;
 
   if (!uid) {
@@ -926,7 +892,7 @@ app.post('/api/notices/mark-read', async (req: Request, res: Response) => {
     }
 
     const data = snap.data();
-    if (data.recipientId !== uid && uid !== DESIGNATED_SUPER_ADMIN_UID) {
+    if (data.recipientId !== uid && !isSuperAdminEmail(email)) {
       return res.status(403).json({ error: 'Unauthorized to mark this notice as read' });
     }
 
@@ -1005,10 +971,8 @@ async function startServer() {
     });
   }
 
-  app.listen(PORT, HOST, async () => {
+  app.listen(PORT, HOST, () => {
     console.log(`Cycle.exe 2.0 full-stack server running on http://${HOST}:${PORT}`);
-    // Run trusted server-side Super Admin bootstrapping on startup
-    await ensureSuperAdminConfigured();
   });
 }
 

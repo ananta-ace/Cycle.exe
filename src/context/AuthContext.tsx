@@ -22,10 +22,8 @@ import { auth, db } from '../firebase';
 import { UserRole, UserProfile } from '../types';
 
 export const AUTHORIZED_SUPER_ADMIN_EMAILS = [
-  'tubedork@gmail.com',
-  'towhidulislamananta@gmail.com',
-  'atofaelislam@gmail.com',
   'ananta.base@gmail.com',
+  'towhidulislamananta@gmail.com',
 ];
 
 export const isSuperAdminEmail = (email?: string | null): boolean => {
@@ -33,7 +31,7 @@ export const isSuperAdminEmail = (email?: string | null): boolean => {
   return AUTHORIZED_SUPER_ADMIN_EMAILS.includes(email.toLowerCase().trim());
 };
 
-export const DESIGNATED_SUPER_ADMIN_EMAIL = 'atofaelislam@gmail.com';
+export const DESIGNATED_SUPER_ADMIN_EMAIL = 'ananta.base@gmail.com';
 
 interface AuthContextType {
   user: User | null;
@@ -105,7 +103,14 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   // Initialize and observe auth state
   useEffect(() => {
+    let unsubProfile: (() => void) | null = null;
+
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
+      if (unsubProfile) {
+        unsubProfile();
+        unsubProfile = null;
+      }
+
       setUser(currentUser);
 
       if (currentUser) {
@@ -146,13 +151,23 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
             });
           } else {
             const data = userSnap.data() as UserProfile;
-            setProfile(data);
+            if (isSuperAdminEmail(currentUser.email) && currentUser.emailVerified && data.role !== 'SUPER_ADMIN') {
+              const now = new Date().toISOString();
+              try {
+                await updateDoc(userRef, { role: 'SUPER_ADMIN', updatedAt: now });
+              } catch {
+                // Fallback to banner bootstrap if needed
+              }
+              setProfile({ ...data, role: 'SUPER_ADMIN' });
+            } else {
+              setProfile(data);
+            }
           }
         } catch (err) {
           console.error('Error fetching/creating user profile:', err);
         }
 
-        const unsubProfile = onSnapshot(
+        unsubProfile = onSnapshot(
           userRef,
           (snap) => {
             if (snap.exists()) {
@@ -165,18 +180,17 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           }
         );
 
-        // Heartbeat will be handled globally
         setLoading(false);
-        return () => {
-          unsubProfile();
-        };
       } else {
         setProfile(null);
         setLoading(false);
       }
     });
 
-    return () => unsubscribe();
+    return () => {
+      if (unsubProfile) unsubProfile();
+      unsubscribe();
+    };
   }, []);
 
   // Send real-time heartbeat for live visitor tracking (both guests and users)
@@ -353,11 +367,14 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
   };
 
-  const role: UserRole = profile?.role || 'PUBLIC';
-  const isSuperAdmin =
-    role === 'SUPER_ADMIN' ||
-    isSuperAdminEmail(user?.email);
-  const isAdmin = role === 'ADMIN' || isSuperAdmin;
+  const isSuperAdmin = isSuperAdminEmail(user?.email);
+  const rawRole: UserRole = profile?.role || 'PUBLIC';
+  const role: UserRole = isSuperAdmin
+    ? 'SUPER_ADMIN'
+    : rawRole === 'SUPER_ADMIN'
+    ? 'PUBLIC'
+    : rawRole;
+  const isAdmin = isSuperAdmin || (role === 'ADMIN' && !profile?.isSuspended);
   const isMember =
     (role === 'MEMBER' ||
       profile?.isAdminMember === true ||

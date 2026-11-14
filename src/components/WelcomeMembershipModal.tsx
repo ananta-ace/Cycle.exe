@@ -7,8 +7,10 @@ export const WelcomeMembershipModal: React.FC = () => {
   if (!user || !profile) return null;
 
   // Determine if the user is eligible for a welcome modal and hasn't seen it yet
-  const isAdminMember = profile.isAdminMember === true || profile.adminMembershipStatus === 'APPROVED';
-  const isRegularAdmin = profile.role === 'ADMIN' && !isSuperAdmin;
+  const isAdminMember =
+    (profile.isAdminMember === true || profile.adminMembershipStatus === 'APPROVED') &&
+    !profile.isSuspended;
+  const isRegularAdmin = profile.role === 'ADMIN' && !isSuperAdmin && !profile.isSuspended;
 
   // Expected tokens
   const adminMemberToken = 'SEEN_ADMIN_MEMBER_v2';

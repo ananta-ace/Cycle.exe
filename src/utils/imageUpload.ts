@@ -53,7 +53,7 @@ function getDefaultLimits(folder: string): { maxDimension: number; quality: numb
       return { maxDimension: 1920, quality: 0.86, maxBytes: 420 * 1024 };
     case 'gallery':
     default:
-      return { maxDimension: 2048, quality: 0.88, maxBytes: 560 * 1024 };
+      return { maxDimension: 2048, quality: 0.88, maxBytes: 520 * 1024 };
   }
 }
 
@@ -238,6 +238,8 @@ export async function optimizeImageToBlob(
       { dimFactor: 0.65, qual: 0.70 },
       { dimFactor: 0.5, qual: 0.65 },
       { dimFactor: 0.38, qual: 0.58 },
+      { dimFactor: 0.28, qual: 0.52 },
+      { dimFactor: 0.2, qual: 0.45 },
     ];
 
     let bestBlob: Blob | null = null;
@@ -404,11 +406,15 @@ export async function uploadImage(
   // Ensure the Data URL is compact enough to stay well below Firestore's 1MB document limit
   let finalBlob = blob;
   if (finalBlob.size > maxBytes) {
-    const recompressed = await optimizeImageToBlob(file, Math.min(maxDimension, 1440), 0.72, maxBytes);
+    const recompressed = await optimizeImageToBlob(file, Math.min(maxDimension, 1280), 0.70, maxBytes);
     finalBlob = recompressed.blob;
   }
 
-  const dataUrl = await blobToDataUrl(finalBlob);
+  let dataUrl = await blobToDataUrl(finalBlob);
+  if (dataUrl.length > 880_000) {
+    const tighter = await optimizeImageToBlob(file, 960, 0.60, 480 * 1024);
+    dataUrl = await blobToDataUrl(tighter.blob);
+  }
   if (onProgress) onProgress(100);
   return dataUrl;
 }

@@ -15,7 +15,13 @@ export const ApplicationModal: React.FC<ApplicationModalProps> = ({
   onClose,
   onOpenAuth,
 }) => {
-  const { user, profile } = useAuth();
+  const { user, profile, isSuperAdmin, isAdmin } = useAuth();
+  const isCurrentlyAdminMember =
+    isSuperAdmin ||
+    ((isAdmin ||
+      profile?.isAdminMember === true ||
+      profile?.adminMembershipStatus === 'APPROVED') &&
+      !profile?.isSuspended);
 
   const [reason, setReason] = useState('');
   const [experience, setExperience] = useState('');
@@ -39,12 +45,14 @@ export const ApplicationModal: React.FC<ApplicationModalProps> = ({
   ];
 
   useEffect(() => {
-    if (!isOpen || !user) return;
+    if (!isOpen) return;
+    setSuccess(false);
+    setError(null);
+    if (!user) return;
 
     const checkExisting = async () => {
       try {
         setLoading(true);
-        setError(null);
         const snap = await getDoc(doc(db, 'applications', user.uid));
         if (snap.exists()) {
           const data = snap.data() as AdminMembershipApplication;
@@ -216,9 +224,9 @@ export const ApplicationModal: React.FC<ApplicationModalProps> = ({
             className={`mb-4 p-3.5 rounded-2xl border-2 text-xs font-medium ${
               existingApp.status === 'PENDING'
                 ? 'bg-amber-50 border-amber-400 text-amber-900'
-                : existingApp.status === 'APPROVED'
+                : existingApp.status === 'APPROVED' && isCurrentlyAdminMember
                 ? 'bg-emerald-50 border-emerald-400 text-emerald-900'
-                : existingApp.status === 'REJECTED'
+                : existingApp.status === 'REJECTED' || (existingApp.status === 'APPROVED' && !isCurrentlyAdminMember)
                 ? 'bg-rose-50 border-rose-400 text-rose-900'
                 : 'bg-zinc-100 border-zinc-400 text-zinc-800'
             }`}
@@ -228,26 +236,36 @@ export const ApplicationModal: React.FC<ApplicationModalProps> = ({
                 className={`fas ${
                   existingApp.status === 'PENDING'
                     ? 'fa-clock'
-                    : existingApp.status === 'APPROVED'
+                    : existingApp.status === 'APPROVED' && isCurrentlyAdminMember
                     ? 'fa-check-circle'
                     : 'fa-info-circle'
                 }`}
               ></i>
-              <span>Application Status: {existingApp.status}</span>
+              <span>
+                Application Status:{' '}
+                {existingApp.status === 'APPROVED' && !isCurrentlyAdminMember
+                  ? 'REMOVED — RE-APPLY OPEN'
+                  : existingApp.status}
+              </span>
             </div>
             {existingApp.status === 'PENDING' && (
               <p>
                 Your application is currently under review by our moderation team and the Super Admin. You will be notified once a decision has been made.
               </p>
             )}
-            {existingApp.status === 'APPROVED' && (
+            {existingApp.status === 'APPROVED' && isCurrentlyAdminMember && (
               <p>
                 Congratulations! Your Admin Membership is approved. You have full community privileges and your custom title is displayed on the Crew directory.
               </p>
             )}
+            {existingApp.status === 'APPROVED' && !isCurrentlyAdminMember && (
+              <p>
+                Your previous Admin Membership is no longer active. You may update your details and submit a new application below.
+              </p>
+            )}
             {existingApp.status === 'REJECTED' && (
               <div>
-                <p>Your previous application was not approved.</p>
+                <p>Your previous application was not approved or membership was removed.</p>
                 {existingApp.rejectionReason && (
                   <p className="italic mt-1">Note: "{existingApp.rejectionReason}"</p>
                 )}

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useAuth, DESIGNATED_SUPER_ADMIN_EMAIL } from '../context/AuthContext';
+import { useAuth, isSuperAdminEmail } from '../context/AuthContext';
 import { uploadImage, isImageFile } from '../utils/imageUpload';
 
 export const ProfileView: React.FC = () => {
@@ -384,7 +384,7 @@ export const ProfileView: React.FC = () => {
       </div>
 
       {/* Super Admin Notice if Designated Owner */}
-      {user.email?.toLowerCase() === DESIGNATED_SUPER_ADMIN_EMAIL.toLowerCase() && (
+      {isSuperAdminEmail(user.email) && (
         <div className="p-4 bg-amber-50 border-2 border-amber-400 rounded-2xl flex items-center justify-between gap-4">
           <div className="flex items-center gap-3">
             <i className="fas fa-crown text-2xl text-amber-600"></i>

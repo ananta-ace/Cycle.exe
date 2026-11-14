@@ -14,7 +14,7 @@ export const MembersView: React.FC<MembersViewProps> = ({
   onSelectMember,
   onOpenApplyModal,
 }) => {
-  const { profile, isSuperAdmin } = useAuth();
+  const { profile, isSuperAdmin, isAdmin } = useAuth();
   const [members, setMembers] = useState<Member[]>([]);
   const [userPhotoMap, setUserPhotoMap] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
@@ -93,8 +93,13 @@ export const MembersView: React.FC<MembersViewProps> = ({
     setRatingTarget(m);
   };
 
-  const userIsApproved = profile?.isAdminMember === true || profile?.adminMembershipStatus === 'APPROVED';
-  const userIsPending = profile?.adminMembershipStatus === 'PENDING';
+  const userIsAdminMember =
+    isSuperAdmin ||
+    ((isAdmin ||
+      profile?.isAdminMember === true ||
+      profile?.adminMembershipStatus === 'APPROVED') &&
+      !profile?.isSuspended);
+  const userIsPending = !userIsAdminMember && profile?.adminMembershipStatus === 'PENDING';
 
   return (
     <div>
@@ -110,56 +115,48 @@ export const MembersView: React.FC<MembersViewProps> = ({
           Cycle.exe official group leaders, ride pace setters, and featured Admin Members. Curated by the Super Admin. Tap any card to view completed races, community badges, or submit a rating.
         </p>
 
-        {/* Application CTA banner */}
-        <div className="mt-8 max-w-3xl lg:max-w-4xl mx-auto p-6 sm:p-7 bg-white rounded-3xl border-3 border-[#1e1e1e] shadow-[0_6px_0_#1e1e1e] flex flex-col sm:flex-row items-center justify-between gap-6 text-left">
-          <div className="flex items-center gap-4">
-            <div className="w-12 h-12 rounded-2xl bg-[#1e1e1e] text-[#f9c74f] flex items-center justify-center text-xl border border-[#1e1e1e] shrink-0 shadow-sm">
-              <i className="fas fa-bicycle"></i>
+        {/* Application CTA banner — hidden once user becomes an Admin Member, reappears if kicked out */}
+        {!userIsAdminMember && (
+          <div className="mt-8 max-w-3xl lg:max-w-4xl mx-auto p-6 sm:p-7 bg-white rounded-3xl border-3 border-[#1e1e1e] shadow-[0_6px_0_#1e1e1e] flex flex-col sm:flex-row items-center justify-between gap-6 text-left">
+            <div className="flex items-center gap-4">
+              <div className="w-12 h-12 rounded-2xl bg-[#1e1e1e] text-[#f9c74f] flex items-center justify-center text-xl border border-[#1e1e1e] shrink-0 shadow-sm">
+                <i className="fas fa-bicycle"></i>
+              </div>
+              <div>
+                <h4 className="font-black text-base text-zinc-900">
+                  {userIsPending
+                    ? 'Your Admin Application is Pending'
+                    : 'Want to Lead Group Rides?'}
+                </h4>
+                <p className="text-xs sm:text-sm text-zinc-600 mt-0.5">
+                  {userIsPending
+                    ? 'The Super Admin is reviewing your submission.'
+                    : 'Apply for official Admin Membership to lead missions and earn community badges.'}
+                </p>
+              </div>
             </div>
-            <div>
-              <h4 className="font-black text-base text-zinc-900">
-                {userIsApproved
-                  ? 'You are an Approved Admin Member!'
-                  : userIsPending
-                  ? 'Your Admin Application is Pending'
-                  : 'Want to Lead Group Rides?'}
-              </h4>
-              <p className="text-xs sm:text-sm text-zinc-600 mt-0.5">
-                {userIsApproved
-                  ? 'Manage your custom title and view your community ratings.'
-                  : userIsPending
-                  ? 'The Super Admin is reviewing your submission.'
-                  : 'Apply for official Admin Membership to lead missions and earn community badges.'}
-              </p>
-            </div>
-          </div>
 
-          <button
-            type="button"
-            onClick={onOpenApplyModal}
-            className={`py-2 px-4 text-xs font-black rounded-xl transition shrink-0 ${
-              userIsApproved
-                ? 'btn-secondary'
-                : userIsPending
-                ? 'bg-amber-100 text-amber-900 border-2 border-amber-400'
-                : 'btn-primary'
-            }`}
-          >
-            {userIsApproved ? (
-              <>
-                <i className="fas fa-check-circle text-emerald-600 mr-1"></i> Membership Active
-              </>
-            ) : userIsPending ? (
-              <>
-                <i className="fas fa-clock text-amber-600 mr-1"></i> Under Review
-              </>
-            ) : (
-              <>
-                <i className="fas fa-paper-plane mr-1"></i> Apply for Admin Member
-              </>
-            )}
-          </button>
-        </div>
+            <button
+              type="button"
+              onClick={onOpenApplyModal}
+              className={`py-2 px-4 text-xs font-black rounded-xl transition shrink-0 ${
+                userIsPending
+                  ? 'bg-amber-100 text-amber-900 border-2 border-amber-400'
+                  : 'btn-primary'
+              }`}
+            >
+              {userIsPending ? (
+                <>
+                  <i className="fas fa-clock text-amber-600 mr-1"></i> Under Review
+                </>
+              ) : (
+                <>
+                  <i className="fas fa-paper-plane mr-1"></i> Apply for Admin Member
+                </>
+              )}
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Loading state */}
@@ -187,7 +184,7 @@ export const MembersView: React.FC<MembersViewProps> = ({
             >
               <i className="fas fa-crown"></i> Open Super Admin Panel to Feature Riders
             </a>
-          ) : (
+          ) : !userIsAdminMember ? (
             <button
               type="button"
               onClick={onOpenApplyModal}
@@ -195,7 +192,7 @@ export const MembersView: React.FC<MembersViewProps> = ({
             >
               <i className="fas fa-paper-plane"></i> Apply to Join The Crew
             </button>
-          )}
+          ) : null}
         </div>
       )}
 
