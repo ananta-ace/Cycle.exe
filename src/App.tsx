@@ -16,7 +16,6 @@ import { SuperAdminBootstrapBanner } from './components/SuperAdminBootstrapBanne
 import { ApplicationModal } from './components/ApplicationModal';
 import { NotificationsDrawer } from './components/NotificationsDrawer';
 import { WelcomeMembershipModal } from './components/WelcomeMembershipModal';
-import { AdminChatView } from './components/AdminChatView';
 
 const MainContent: React.FC = () => {
   const { isSuperAdmin, isAdmin } = useAuth();
@@ -29,8 +28,7 @@ const MainContent: React.FC = () => {
       hash === 'community' ||
       hash === 'profile' ||
       hash === 'admin' ||
-      hash === 'superadmin' ||
-      hash === 'adminchat'
+      hash === 'superadmin'
     ) {
       return hash as TabType;
     }
@@ -82,8 +80,7 @@ const MainContent: React.FC = () => {
         hash === 'community' ||
         hash === 'profile' ||
         hash === 'admin' ||
-        hash === 'superadmin' ||
-        hash === 'adminchat'
+        hash === 'superadmin'
       ) {
         setActiveTab(hash as TabType);
       }
@@ -149,7 +146,6 @@ const MainContent: React.FC = () => {
         {activeTab === 'profile' && <ProfileView />}
         {activeTab === 'admin' && isAdmin && <AdminDashboard />}
         {activeTab === 'superadmin' && isSuperAdmin && <SuperAdminDashboard />}
-        {activeTab === 'adminchat' && isAdmin && <AdminChatView />}
       </main>
 
       <Footer />
