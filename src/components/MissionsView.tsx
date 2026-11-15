@@ -587,9 +587,9 @@ export const MissionsView: React.FC = () => {
       }
 
       setMissions((prev) => prev.filter((m) => m.id !== missionId && m.name !== name));
-    } catch (err) {
+    } catch (err: unknown) {
       console.error('Error deleting mission:', err);
-      alert('Failed to delete mission from database.');
+      alert(err instanceof Error ? err.message : 'Failed to delete mission from database.');
     }
   };
 

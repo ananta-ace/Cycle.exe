@@ -276,9 +276,9 @@ export const SuperAdminNoticesPanel: React.FC<SuperAdminNoticesPanelProps> = ({
       );
 
       setAdminReplyText('');
-    } catch (err) {
+    } catch (err: unknown) {
       console.error('Error adding admin reply:', err);
-      alert('Failed to send reply to thread');
+      alert(err instanceof Error ? err.message : 'Failed to send reply to thread');
     } finally {
       setSubmittingReply(false);
     }
@@ -292,9 +292,9 @@ export const SuperAdminNoticesPanel: React.FC<SuperAdminNoticesPanelProps> = ({
       if (activeThreadNotice?.id === noticeId) {
         setActiveThreadNotice(null);
       }
-    } catch (err) {
+    } catch (err: unknown) {
       console.error('Error deleting notice:', err);
-      alert('Failed to delete notice');
+      alert(err instanceof Error ? err.message : 'Failed to delete notice');
     }
   };
 

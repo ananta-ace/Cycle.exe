@@ -182,9 +182,9 @@ export const GalleryView: React.FC = () => {
 
     try {
       await deleteDoc(doc(db, 'gallery', photo.id));
-    } catch (err) {
+    } catch (err: unknown) {
       console.error('Error deleting photo:', err);
-      alert('Failed to delete photo.');
+      alert(err instanceof Error ? err.message : 'Failed to delete photo.');
     }
   };
 

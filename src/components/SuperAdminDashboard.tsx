@@ -23,7 +23,7 @@ import { uploadImage, isImageFile } from '../utils/imageUpload';
 import { SuperAdminNoticesPanel } from './SuperAdminNoticesPanel';
 
 export const SuperAdminDashboard: React.FC = () => {
-  const { user, isSuperAdmin, role } = useAuth();
+  const { user, profile, isSuperAdmin, role, syncSuperAdminAccess } = useAuth();
 
   // All registered users from Firestore
   const [allUsers, setAllUsers] = useState<UserProfile[]>([]);
@@ -168,6 +168,23 @@ export const SuperAdminDashboard: React.FC = () => {
       unsubFeat();
     };
   }, [isSuperAdmin]);
+
+  // Ensure all authorized Super Admin emails (ananta.base@gmail.com & towhidulislamananta@gmail.com)
+  // have role === 'SUPER_ADMIN' in Firestore whenever a live Super Admin opens the hub
+  useEffect(() => {
+    if (!isSuperAdmin || allUsers.length === 0) return;
+    const missingSync = allUsers.some(
+      (u) => isSuperAdminEmail(u.email) && u.role !== 'SUPER_ADMIN'
+    );
+    const staleOther = allUsers.some(
+      (u) => !isSuperAdminEmail(u.email) && u.role === 'SUPER_ADMIN'
+    );
+    if (missingSync || staleOther) {
+      syncSuperAdminAccess().catch(() => {
+        // Handled cleanly via banner if current user lacks cross-user write permission yet
+      });
+    }
+  }, [isSuperAdmin, allUsers]);
 
   // Approve Admin Membership Application
   const handleApproveApp = async (app: AdminMembershipApplication) => {
@@ -381,7 +398,7 @@ export const SuperAdminDashboard: React.FC = () => {
       alert('Custom community title updated!');
     } catch (err: unknown) {
       console.error('Error updating title:', err);
-      alert('Failed to update title');
+      alert(err instanceof Error ? err.message : 'Failed to update title');
     }
   };
 
@@ -545,7 +562,7 @@ export const SuperAdminDashboard: React.FC = () => {
       });
     } catch (err) {
       console.error('Error featuring user on home screen:', err);
-      alert('Failed to feature user on home screen');
+      alert(err instanceof Error ? err.message : 'Failed to feature user on home screen');
     }
   };
 
@@ -590,7 +607,7 @@ export const SuperAdminDashboard: React.FC = () => {
       setIsCreatingCustomFeatured(false);
     } catch (err) {
       console.error('Error saving featured member:', err);
-      alert('Failed to save featured member');
+      alert(err instanceof Error ? err.message : 'Failed to save featured member');
     } finally {
       setFeatSaving(false);
     }
@@ -602,7 +619,7 @@ export const SuperAdminDashboard: React.FC = () => {
       await deleteDoc(doc(db, 'featuredMembers', memberId));
     } catch (err) {
       console.error('Error deleting featured member:', err);
-      alert('Failed to delete featured member');
+      alert(err instanceof Error ? err.message : 'Failed to delete featured member');
     }
   };
 
@@ -781,7 +798,7 @@ export const SuperAdminDashboard: React.FC = () => {
       fetchStats();
     } catch (err) {
       console.error('Role update error:', err);
-      alert('Failed to update user role');
+      alert(err instanceof Error ? err.message : 'Failed to update user role');
     }
   };
 
@@ -817,8 +834,9 @@ export const SuperAdminDashboard: React.FC = () => {
       });
 
       fetchStats();
-    } catch (err) {
+    } catch (err: unknown) {
       console.error('Suspension toggle error:', err);
+      alert(err instanceof Error ? err.message : 'Failed to update suspension status');
     }
   };
 
@@ -946,6 +964,37 @@ export const SuperAdminDashboard: React.FC = () => {
           </div>
         </div>
       </div>
+
+      {profile && profile.role !== 'SUPER_ADMIN' && (
+        <div className="neo-card p-4 sm:p-5 bg-amber-50 border-2 border-amber-600 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div className="flex items-start gap-3">
+            <div className="w-10 h-10 rounded-full bg-amber-500 text-black border-2 border-zinc-900 flex items-center justify-center shrink-0 mt-0.5">
+              <i className="fas fa-shield-alt"></i>
+            </div>
+            <div>
+              <h3 className="text-sm font-black text-zinc-900">
+                Firestore Database Role Needs Sync (Current DB role: {profile.role})
+              </h3>
+              <p className="text-xs text-zinc-700 mt-0.5 leading-relaxed">
+                Your account (<strong>{user?.email}</strong>) is an authorized Super Admin, so you can view this panel,
+                but Firestore database writes require <code>SUPER_ADMIN</code> clearance in the live database.
+                Sign in once with <strong>towhidulislamananta@gmail.com</strong> (which auto-promotes your database record),
+                or publish the updated <code>firestore.rules</code> in Firebase Console.
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={async () => {
+              const res = await syncSuperAdminAccess();
+              alert(res.message);
+            }}
+            className="btn-primary py-2 px-4 text-xs font-black whitespace-nowrap shrink-0"
+          >
+            <i className="fas fa-sync-alt mr-1"></i> Sync DB Clearance
+          </button>
+        </div>
+      )}
 
       {/* TAB: HOME SCREEN FEATURED MEMBERS MANAGEMENT (Requirement 5) */}
       {adminTab === 'featured' && (
@@ -1594,7 +1643,21 @@ export const SuperAdminDashboard: React.FC = () => {
                       </td>
                       <td>
                         {isOwner ? (
-                          <span className="text-xs font-bold text-amber-700 italic">Permanent Owner</span>
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="text-xs font-bold text-amber-700 italic">Permanent Owner</span>
+                            {u.role !== 'SUPER_ADMIN' && (
+                              <button
+                                type="button"
+                                onClick={async () => {
+                                  const res = await syncSuperAdminAccess();
+                                  alert(res.message);
+                                }}
+                                className="px-2 py-1 rounded-lg border border-amber-700 bg-amber-100 hover:bg-amber-200 text-amber-900 text-[11px] font-black"
+                              >
+                                Sync DB ({u.role} &rarr; SUPER_ADMIN)
+                              </button>
+                            )}
+                          </div>
                         ) : (
                           <div className="flex items-center gap-1.5">
                             <button

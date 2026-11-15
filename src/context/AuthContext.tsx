@@ -13,6 +13,7 @@ import {
 import {
   doc,
   getDoc,
+  getDocs,
   setDoc,
   updateDoc,
   onSnapshot,
@@ -38,6 +39,7 @@ interface AuthContextType {
   profile: UserProfile | null;
   role: UserRole;
   isSuperAdmin: boolean;
+  firestoreSuperAdminSynced: boolean;
   isAdmin: boolean;
   isMember: boolean;
   isSuspended: boolean;
@@ -48,6 +50,7 @@ interface AuthContextType {
   loginWithEmail: (email: string, pass: string) => Promise<void>;
   signOutUser: () => Promise<void>;
   bootstrapSuperAdmin: () => Promise<{ success: boolean; message: string }>;
+  syncSuperAdminAccess: () => Promise<{ synced: boolean; message: string }>;
   redeemInvitation: (code: string) => Promise<{ success: boolean; message: string }>;
   updateProfileDetails: (name: string, bio: string, photoURL?: string, customTitle?: string) => Promise<void>;
   dismissWelcomeModal: (roleToken: string) => Promise<void>;
@@ -151,16 +154,41 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
             });
           } else {
             const data = userSnap.data() as UserProfile;
-            if (isSuperAdminEmail(currentUser.email) && currentUser.emailVerified && data.role !== 'SUPER_ADMIN') {
+            setProfile(data);
+
+            if (isSuperAdminEmail(currentUser.email) && currentUser.emailVerified) {
               const now = new Date().toISOString();
-              try {
-                await updateDoc(userRef, { role: 'SUPER_ADMIN', updatedAt: now });
-              } catch {
-                // Fallback to banner bootstrap if needed
+              if (data.role !== 'SUPER_ADMIN') {
+                try {
+                  await updateDoc(userRef, { role: 'SUPER_ADMIN', isSuspended: false, updatedAt: now });
+                  setProfile({ ...data, role: 'SUPER_ADMIN', isSuspended: false });
+                } catch {
+                  // Cannot self-promote yet under live Firestore rules until synced by existing Super Admin or rules update
+                }
               }
-              setProfile({ ...data, role: 'SUPER_ADMIN' });
-            } else {
-              setProfile(data);
+              // When signed in with live Firestore Super Admin rights (e.g. towhidulislamananta@gmail.com),
+              // ensure ALL authorized Super Admin accounts (including ananta.base@gmail.com) have role === 'SUPER_ADMIN' in Firestore.
+              try {
+                const allSnap = await getDocs(collection(db, 'users'));
+                for (const d of allSnap.docs) {
+                  const uData = d.data() as Partial<UserProfile>;
+                  const shouldBeSuper = isSuperAdminEmail(uData.email);
+                  if (shouldBeSuper && uData.role !== 'SUPER_ADMIN') {
+                    await updateDoc(doc(db, 'users', d.id), {
+                      role: 'SUPER_ADMIN',
+                      isSuspended: false,
+                      updatedAt: now,
+                    });
+                  } else if (!shouldBeSuper && uData.role === 'SUPER_ADMIN') {
+                    await updateDoc(doc(db, 'users', d.id), {
+                      role: 'PUBLIC',
+                      updatedAt: now,
+                    });
+                  }
+                }
+              } catch {
+                // Current user does not yet have cross-user write permission in Firestore rules
+              }
             }
           }
         } catch (err) {
@@ -257,6 +285,65 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     setProfile(null);
   };
 
+  const syncSuperAdminAccess = async (): Promise<{ synced: boolean; message: string }> => {
+    if (!user || !isSuperAdminEmail(user.email)) {
+      return { synced: false, message: 'Only authorized Super Admin emails can sync Super Admin access.' };
+    }
+    if (!user.emailVerified) {
+      return { synced: false, message: 'Please verify your email address first.' };
+    }
+
+    const now = new Date().toISOString();
+    try {
+      const userRef = doc(db, 'users', user.uid);
+      const snap = await getDoc(userRef);
+      if (snap.exists() && snap.data()?.role !== 'SUPER_ADMIN') {
+        await updateDoc(userRef, { role: 'SUPER_ADMIN', isSuspended: false, updatedAt: now });
+      }
+
+      const allSnap = await getDocs(collection(db, 'users'));
+      let updatedCount = 0;
+      for (const d of allSnap.docs) {
+        const uData = d.data() as Partial<UserProfile>;
+        const shouldBeSuper = isSuperAdminEmail(uData.email);
+        if (shouldBeSuper && uData.role !== 'SUPER_ADMIN') {
+          await updateDoc(doc(db, 'users', d.id), {
+            role: 'SUPER_ADMIN',
+            isSuspended: false,
+            updatedAt: now,
+          });
+          updatedCount++;
+        } else if (!shouldBeSuper && uData.role === 'SUPER_ADMIN') {
+          await updateDoc(doc(db, 'users', d.id), {
+            role: 'PUBLIC',
+            updatedAt: now,
+          });
+        }
+      }
+
+      const refreshed = await getDoc(userRef);
+      if (refreshed.exists()) {
+        setProfile(refreshed.data() as UserProfile);
+      }
+
+      return {
+        synced: true,
+        message:
+          updatedCount > 0
+            ? `Synced SUPER_ADMIN database clearance for ${updatedCount} account(s)!`
+            : 'Your Super Admin database clearance is active!',
+      };
+    } catch (err: unknown) {
+      return {
+        synced: false,
+        message:
+          err instanceof Error
+            ? `Database rules blocked self-promotion (${err.message}). Sign in once as towhidulislamananta@gmail.com or publish firestore.rules in Firebase Console.`
+            : 'Database permission sync requires opening the app once as towhidulislamananta@gmail.com or publishing firestore.rules.',
+      };
+    }
+  };
+
   const bootstrapSuperAdmin = async () => {
     if (!user) throw new Error('You must be signed in.');
 
@@ -276,10 +363,11 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     // Update Firestore user document role to SUPER_ADMIN
     await updateDoc(doc(db, 'users', user.uid), {
       role: 'SUPER_ADMIN',
+      isSuspended: false,
       updatedAt: new Date().toISOString(),
     });
 
-    setProfile((prev) => (prev ? { ...prev, role: 'SUPER_ADMIN' } : null));
+    setProfile((prev) => (prev ? { ...prev, role: 'SUPER_ADMIN', isSuspended: false } : null));
     return { success: true, message: data.message };
   };
 
@@ -368,6 +456,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   };
 
   const isSuperAdmin = isSuperAdminEmail(user?.email);
+  const firestoreSuperAdminSynced = isSuperAdmin && profile?.role === 'SUPER_ADMIN';
   const rawRole: UserRole = profile?.role || 'PUBLIC';
   const role: UserRole = isSuperAdmin
     ? 'SUPER_ADMIN'
@@ -390,6 +479,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         profile,
         role,
         isSuperAdmin,
+        firestoreSuperAdminSynced,
         isAdmin,
         isMember,
         isSuspended,
@@ -400,6 +490,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         loginWithEmail,
         signOutUser,
         bootstrapSuperAdmin,
+        syncSuperAdminAccess,
         redeemInvitation,
         updateProfileDetails,
         dismissWelcomeModal,
