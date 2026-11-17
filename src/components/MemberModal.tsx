@@ -1,5 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { Member } from '../types';
+import { collection, doc, onSnapshot } from 'firebase/firestore';
+import { db } from '../firebase';
+import { useAuth } from '../context/AuthContext';
+import { Member, MemberRating } from '../types';
 
 interface MemberModalProps {
   member: Member | null;
@@ -12,11 +15,72 @@ export const MemberModal: React.FC<MemberModalProps> = ({
   onClose,
   onOpenRating,
 }) => {
+  const { user } = useAuth();
   const [imageError, setImageError] = useState(false);
+  const [liveRatingAvg, setLiveRatingAvg] = useState<number | undefined>(undefined);
+  const [liveRatingCnt, setLiveRatingCnt] = useState<number | undefined>(undefined);
+  const [reviews, setReviews] = useState<MemberRating[]>([]);
 
   useEffect(() => {
     setImageError(false);
-  }, [member]);
+    setLiveRatingAvg(member?.ratingAverage);
+    setLiveRatingCnt(member?.ratingCount);
+    setReviews([]);
+
+    if (!member) return;
+
+    const unsubMember = onSnapshot(
+      doc(db, 'featuredMembers', member.id),
+      (snap) => {
+        if (snap.exists()) {
+          const data = snap.data();
+          setLiveRatingAvg(typeof data.ratingAverage === 'number' ? data.ratingAverage : 0);
+          setLiveRatingCnt(typeof data.ratingCount === 'number' ? data.ratingCount : 0);
+        }
+      },
+      () => {
+        // Fallback to passed member prop
+      }
+    );
+
+    let unsubOwnRating: (() => void) | null = null;
+
+    const unsubRatings = onSnapshot(
+      collection(db, 'featuredMembers', member.id, 'ratings'),
+      (snap) => {
+        const list: MemberRating[] = [];
+        snap.forEach((d) => {
+          const data = d.data() as MemberRating;
+          list.push({ ...data, id: d.id });
+        });
+        list.sort((a, b) => (b.updatedAt || b.createdAt || '').localeCompare(a.updatedAt || a.createdAt || ''));
+        setReviews(list);
+      },
+      () => {
+        if (user && !unsubOwnRating) {
+          unsubOwnRating = onSnapshot(
+            doc(db, 'featuredMembers', member.id, 'ratings', user.uid),
+            (ownSnap) => {
+              if (ownSnap.exists()) {
+                setReviews([{ ...(ownSnap.data() as MemberRating), id: ownSnap.id }]);
+              } else {
+                setReviews([]);
+              }
+            },
+            () => {
+              // Non-fatal
+            }
+          );
+        }
+      }
+    );
+
+    return () => {
+      unsubMember();
+      unsubRatings();
+      if (unsubOwnRating) unsubOwnRating();
+    };
+  }, [member, user?.uid]);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -36,8 +100,12 @@ export const MemberModal: React.FC<MemberModalProps> = ({
     return <div className="modal-overlay" aria-hidden="true" />;
   }
 
-  const ratingAvg = member.ratingAverage !== undefined && member.ratingAverage > 0 ? member.ratingAverage : null;
-  const ratingCnt = member.ratingCount || 0;
+  const effectiveAvg = liveRatingAvg !== undefined ? liveRatingAvg : member.ratingAverage;
+  const effectiveCnt = liveRatingCnt !== undefined ? liveRatingCnt : member.ratingCount;
+  const ratingAvg = effectiveAvg !== undefined && effectiveAvg > 0 ? effectiveAvg : null;
+  const ratingCnt = effectiveCnt || 0;
+  const userHasRated = Boolean(user && reviews.some((r) => r.raterId === user.uid || r.id === user.uid));
+  const isSelf = Boolean(user && (user.uid === member.id || (member.userId && user.uid === member.userId)));
 
   return (
     <div
@@ -82,7 +150,7 @@ export const MemberModal: React.FC<MemberModalProps> = ({
           </div>
 
           {/* Rating overview */}
-          <div className="mt-3 flex items-center justify-center gap-2">
+          <div className="mt-3 flex items-center justify-center gap-2 flex-wrap">
             {ratingAvg ? (
               <div className="flex items-center gap-1.5 bg-amber-50 px-3 py-1 rounded-full border border-amber-300 text-xs font-bold text-amber-950">
                 <i className="fas fa-star text-amber-500"></i>
@@ -93,13 +161,13 @@ export const MemberModal: React.FC<MemberModalProps> = ({
               <span className="text-xs text-zinc-500 font-semibold italic">No ratings yet</span>
             )}
 
-            {onOpenRating && (
+            {onOpenRating && !isSelf && (
               <button
                 type="button"
                 onClick={() => onOpenRating(member)}
-                className="text-xs font-black text-amber-700 hover:text-black bg-[#f9c74f] px-3 py-1 rounded-full border border-black/20 transition flex items-center gap-1 shadow-[0_2px_0_#d6d2ca]"
+                className="text-xs font-black text-amber-950 hover:text-black bg-[#f9c74f] px-3 py-1 rounded-full border border-black/20 transition flex items-center gap-1 shadow-[0_2px_0_#d6d2ca]"
               >
-                <i className="fas fa-star"></i> Rate
+                <i className="fas fa-star"></i> {userHasRated ? 'Edit Rating' : 'Rate'}
               </button>
             )}
           </div>
@@ -174,6 +242,48 @@ export const MemberModal: React.FC<MemberModalProps> = ({
         ) : (
           <p className="text-xs text-zinc-500 italic text-center py-3">
             Races and ride participations are recorded and verified by the Super Admin.
+          </p>
+        )}
+
+        {/* Community Ratings & Reviews */}
+        <div className="modal-section-title mt-5">
+          <i className="fas fa-star"></i> Community Ratings &amp; Reviews ({reviews.length})
+        </div>
+
+        {reviews.length > 0 ? (
+          <div className="space-y-2.5 mt-2">
+            {reviews.map((rev) => (
+              <div
+                key={rev.id}
+                className="p-3 bg-zinc-50 border border-zinc-200 rounded-xl text-left"
+              >
+                <div className="flex items-center justify-between gap-2 mb-1">
+                  <span className="text-xs font-black text-zinc-900">
+                    {rev.raterName || 'Rider'}
+                    {user && rev.raterId === user.uid && (
+                      <span className="ml-1.5 text-[10px] font-bold px-1.5 py-0.5 rounded bg-amber-100 text-amber-900">
+                        You
+                      </span>
+                    )}
+                  </span>
+                  <div className="flex items-center gap-0.5 text-xs">
+                    {[1, 2, 3, 4, 5].map((s) => (
+                      <i
+                        key={s}
+                        className={`fas fa-star ${s <= rev.rating ? 'text-[#f9c74f]' : 'text-zinc-300'}`}
+                      ></i>
+                    ))}
+                  </div>
+                </div>
+                {rev.comment && (
+                  <p className="text-xs text-zinc-700 leading-relaxed">{rev.comment}</p>
+                )}
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="text-xs text-zinc-500 italic text-center py-3">
+            No community reviews yet. Be the first to share feedback!
           </p>
         )}
       </div>

@@ -49,6 +49,21 @@ service cloud.firestore {
       return id is string && id.size() > 0 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
     }
 
+    function isValidMemberRating(data, targetId, raterId) {
+      return data.keys().hasAll(['id', 'targetMemberId', 'raterId', 'rating', 'createdAt']) &&
+        data.keys().hasOnly(['id', 'targetMemberId', 'raterId', 'raterName', 'rating', 'comment', 'createdAt', 'updatedAt']) &&
+        data.id == raterId &&
+        data.targetMemberId == targetId &&
+        data.raterId == raterId &&
+        data.rating is number &&
+        data.rating >= 1 &&
+        data.rating <= 5 &&
+        data.createdAt is string && data.createdAt.size() <= 64 &&
+        (!('raterName' in data) || (data.raterName is string && data.raterName.size() <= 80)) &&
+        (!('comment' in data) || (data.comment is string && data.comment.size() <= 500)) &&
+        (!('updatedAt' in data) || (data.updatedAt is string && data.updatedAt.size() <= 64));
+    }
+
     // Users Collection
     match /users/{userId} {
       allow get: if isValidId(userId);
@@ -73,7 +88,12 @@ service cloud.firestore {
         (
           // Allow rating updates to be aggregated
           isSignedIn() &&
-          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['ratingAverage', 'ratingCount', 'updatedAt'])
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['ratingAverage', 'ratingCount', 'updatedAt']) &&
+          request.resource.data.ratingAverage is number &&
+          request.resource.data.ratingAverage >= 0 &&
+          request.resource.data.ratingAverage <= 5 &&
+          request.resource.data.ratingCount is number &&
+          request.resource.data.ratingCount >= 0
         )
       );
 
@@ -86,14 +106,16 @@ service cloud.firestore {
 
       // Member Ratings subcollection
       match /ratings/{raterId} {
-        allow get, list: if isValidId(userId) && isValidId(raterId);
+        allow get: if isValidId(userId) && isValidId(raterId);
+        allow list: if isValidId(userId);
         allow create, update: if isValidId(userId) && isValidId(raterId) &&
           isSignedIn() &&
           request.auth.uid == raterId &&
           request.auth.uid != userId &&
-          request.resource.data.rating >= 1 &&
-          request.resource.data.rating <= 5;
-        allow delete: if isValidId(raterId) && (request.auth.uid == raterId || isSuperAdmin());
+          isValidMemberRating(request.resource.data, userId, raterId);
+        allow delete: if isValidId(userId) && isValidId(raterId) &&
+          isSignedIn() &&
+          (request.auth.uid == raterId || isSuperAdmin());
       }
     }
 
@@ -103,18 +125,28 @@ service cloud.firestore {
       allow create, delete: if isSuperAdmin();
       allow update: if isSuperAdmin() || (
         isSignedIn() &&
-        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['ratingAverage', 'ratingCount', 'updatedAt'])
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['ratingAverage', 'ratingCount', 'updatedAt']) &&
+        request.resource.data.ratingAverage is number &&
+        request.resource.data.ratingAverage >= 0 &&
+        request.resource.data.ratingAverage <= 5 &&
+        request.resource.data.ratingCount is number &&
+        request.resource.data.ratingCount >= 0
       );
 
       // Ratings on featured members
       match /ratings/{raterId} {
-        allow get, list: if isValidId(memberId) && isValidId(raterId);
+        allow get: if isValidId(memberId) && isValidId(raterId);
+        allow list: if isValidId(memberId);
         allow create, update: if isValidId(memberId) && isValidId(raterId) &&
           isSignedIn() &&
           request.auth.uid == raterId &&
-          request.resource.data.rating >= 1 &&
-          request.resource.data.rating <= 5;
-        allow delete: if isValidId(raterId) && (request.auth.uid == raterId || isSuperAdmin());
+          request.auth.uid != memberId &&
+          (!('userId' in get(/databases/$(database)/documents/featuredMembers/$(memberId)).data) ||
+            get(/databases/$(database)/documents/featuredMembers/$(memberId)).data.userId != request.auth.uid) &&
+          isValidMemberRating(request.resource.data, memberId, raterId);
+        allow delete: if isValidId(memberId) && isValidId(raterId) &&
+          isSignedIn() &&
+          (request.auth.uid == raterId || isSuperAdmin());
       }
     }
 

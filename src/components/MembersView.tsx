@@ -8,11 +8,13 @@ import { RatingModal } from './RatingModal';
 interface MembersViewProps {
   onSelectMember: (member: Member) => void;
   onOpenApplyModal: () => void;
+  onOpenAuth?: () => void;
 }
 
 export const MembersView: React.FC<MembersViewProps> = ({
   onSelectMember,
   onOpenApplyModal,
+  onOpenAuth,
 }) => {
   const { profile, isSuperAdmin, isAdmin } = useAuth();
   const [members, setMembers] = useState<Member[]>([]);
@@ -323,6 +325,7 @@ export const MembersView: React.FC<MembersViewProps> = ({
         isOpen={ratingTarget !== null}
         targetMember={ratingTarget}
         onClose={() => setRatingTarget(null)}
+        onOpenAuth={onOpenAuth}
       />
     </div>
   );

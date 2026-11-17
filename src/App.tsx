@@ -16,6 +16,7 @@ import { SuperAdminBootstrapBanner } from './components/SuperAdminBootstrapBanne
 import { ApplicationModal } from './components/ApplicationModal';
 import { NotificationsDrawer } from './components/NotificationsDrawer';
 import { WelcomeMembershipModal } from './components/WelcomeMembershipModal';
+import { RatingModal } from './components/RatingModal';
 
 const MainContent: React.FC = () => {
   const { isSuperAdmin, isAdmin } = useAuth();
@@ -36,6 +37,7 @@ const MainContent: React.FC = () => {
   });
 
   const [selectedMember, setSelectedMember] = useState<Member | null>(null);
+  const [ratingTarget, setRatingTarget] = useState<Member | null>(null);
   const [authModalOpen, setAuthModalOpen] = useState(false);
   const [applyModalOpen, setApplyModalOpen] = useState(false);
   const [notificationsDrawerOpen, setNotificationsDrawerOpen] = useState(false);
@@ -138,6 +140,7 @@ const MainContent: React.FC = () => {
           <MembersView
             onSelectMember={(member) => setSelectedMember(member)}
             onOpenApplyModal={() => setApplyModalOpen(true)}
+            onOpenAuth={() => setAuthModalOpen(true)}
           />
         )}
         {activeTab === 'community' && <CommunityFeed />}
@@ -154,6 +157,14 @@ const MainContent: React.FC = () => {
       <MemberModal
         member={selectedMember}
         onClose={() => setSelectedMember(null)}
+        onOpenRating={(member) => setRatingTarget(member)}
+      />
+
+      <RatingModal
+        isOpen={ratingTarget !== null}
+        targetMember={ratingTarget}
+        onClose={() => setRatingTarget(null)}
+        onOpenAuth={() => setAuthModalOpen(true)}
       />
 
       <AuthModal

@@ -287,6 +287,10 @@
       "schema": { "$ref": "#/entities/FeaturedMember" },
       "description": "Featured riders displayed on the home screen curated by Super Admin"
     },
+    "/featuredMembers/{memberId}/ratings/{raterId}": {
+      "schema": { "$ref": "#/entities/MemberRating" },
+      "description": "Public community ratings and reviews for featured riders"
+    },
     "/users/{userId}": {
       "schema": { "$ref": "#/entities/UserPublic" },
       "description": "Public user profile and assigned community role"
