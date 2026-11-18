@@ -27,6 +27,8 @@ import {
   SuperAdminNoticesPanel,
   DirectNoticeComposerModal,
 } from './SuperAdminNoticesPanel';
+import firebaseConfig from '../../firebase-applet-config.json';
+import firestoreRulesContent from '../../firestore.rules?raw';
 
 interface ActionBannerState {
   type: 'success' | 'error' | 'info';
@@ -49,6 +51,8 @@ export const SuperAdminDashboard: React.FC = () => {
   const [inspectingUser, setInspectingUser] = useState<UserProfile | null>(null);
   const [inspectActionFeedback, setInspectActionFeedback] = useState<ActionBannerState | null>(null);
   const [inspectActionBusy, setInspectActionBusy] = useState<string | null>(null);
+  const [roleRulesBlocked, setRoleRulesBlocked] = useState(false);
+  const [copiedRules, setCopiedRules] = useState(false);
 
   // Super Admin Account Deletion Modal State
   const [deleteTargetUser, setDeleteTargetUser] = useState<UserProfile | null>(null);
@@ -230,6 +234,8 @@ export const SuperAdminDashboard: React.FC = () => {
   const openInspectUser = (u: UserProfile) => {
     setInspectActionFeedback(null);
     setInspectActionBusy(null);
+    setRoleRulesBlocked(false);
+    setCopiedRules(false);
     setInspectingUser(u);
   };
 
@@ -837,6 +843,8 @@ export const SuperAdminDashboard: React.FC = () => {
     try {
       setInspectActionBusy('role');
       setInspectActionFeedback(null);
+      setRoleRulesBlocked(false);
+      setCopiedRules(false);
 
       const now = new Date().toISOString();
       const becomingSuperAdmin = newRole === 'SUPER_ADMIN';
@@ -992,9 +1000,14 @@ export const SuperAdminDashboard: React.FC = () => {
 
       setUserActionBanner({ type: 'success', text: successText });
       setInspectActionFeedback({ type: 'success', text: successText });
+      setRoleRulesBlocked(false);
       fetchStats();
     } catch (err) {
       console.error('Role update error:', err);
+      const raw = err instanceof Error ? err.message.toLowerCase() : String(err || '').toLowerCase();
+      if (raw.includes('permission') || raw.includes('insufficient')) {
+        setRoleRulesBlocked(true);
+      }
       const errMsg = formatUserWriteError(err, 'Failed to update user role');
       setUserActionBanner({ type: 'error', text: errMsg });
       setInspectActionFeedback({ type: 'error', text: errMsg });
@@ -2705,7 +2718,76 @@ export const SuperAdminDashboard: React.FC = () => {
                       })}
                     </div>
 
-                    {/* Quick Remove Super Admin (Permanent Owner Only) */}
+                      {/* Inline Role Feedback & Rules Sync Helper (visible without scrolling up) */}
+                      {inspectActionFeedback && (
+                        <div
+                          className={`p-2.5 rounded-xl border text-[11px] font-bold flex items-start gap-2 ${
+                            inspectActionFeedback.type === 'error'
+                              ? 'bg-red-50 border-red-400 text-red-900'
+                              : inspectActionFeedback.type === 'info'
+                                ? 'bg-amber-50 border-amber-400 text-amber-900'
+                                : 'bg-emerald-50 border-emerald-400 text-emerald-900'
+                          }`}
+                        >
+                          <i
+                            className={`fas mt-0.5 ${
+                              inspectActionFeedback.type === 'error'
+                                ? 'fa-exclamation-triangle text-red-600'
+                                : inspectActionFeedback.type === 'info'
+                                  ? 'fa-info-circle text-amber-600'
+                                  : 'fa-check-circle text-emerald-600'
+                            }`}
+                          ></i>
+                          <span>{inspectActionFeedback.text}</span>
+                        </div>
+                      )}
+
+                      {roleRulesBlocked && (
+                        <div className="p-3 bg-amber-50 border-2 border-amber-500 rounded-xl space-y-2 text-[11px] text-amber-950">
+                          <div className="font-black flex items-center gap-1.5 text-amber-900">
+                            <i className="fas fa-shield-alt text-amber-600"></i>
+                            <span>Live Firestore Rules Need Updating for SUPER_ADMIN</span>
+                          </div>
+                          <p className="leading-relaxed text-amber-900">
+                            The live rules currently published on Firebase project{' '}
+                            <code className="font-mono font-bold">{firebaseConfig.projectId}</code> only permit{' '}
+                            <code className="font-mono font-bold">PUBLIC</code>,{' '}
+                            <code className="font-mono font-bold">MEMBER</code>, and{' '}
+                            <code className="font-mono font-bold">ADMIN</code>. Copy the updated{' '}
+                            <code className="font-mono font-bold">firestore.rules</code> below and click{' '}
+                            <strong>Publish</strong> in Firebase Console once.
+                          </p>
+                          <div className="flex flex-wrap items-center gap-2 pt-0.5">
+                            <button
+                              type="button"
+                              onClick={async () => {
+                                try {
+                                  await navigator.clipboard.writeText(firestoreRulesContent);
+                                  setCopiedRules(true);
+                                  setTimeout(() => setCopiedRules(false), 3000);
+                                } catch {
+                                  // Fallback ignored if clipboard blocked
+                                }
+                              }}
+                              className="px-3 py-1.5 rounded-lg border-2 border-[#1e1e1e] bg-[#f9c74f] hover:bg-amber-400 text-[#1e1e1e] font-black flex items-center gap-1.5 cursor-pointer"
+                            >
+                              <i className={`fas ${copiedRules ? 'fa-check' : 'fa-copy'}`}></i>
+                              <span>{copiedRules ? 'Copied firestore.rules!' : 'Copy firestore.rules'}</span>
+                            </button>
+                            <a
+                              href={`https://console.firebase.google.com/project/${firebaseConfig.projectId}/firestore/databases/${firebaseConfig.firestoreDatabaseId || '(default)'}/rules`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="px-3 py-1.5 rounded-lg border-2 border-zinc-900 bg-white hover:bg-zinc-100 text-zinc-900 font-black inline-flex items-center gap-1.5"
+                            >
+                              <i className="fas fa-external-link-alt"></i>
+                              <span>Open Firebase Rules Console</span>
+                            </a>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Quick Remove Super Admin (Permanent Owner Only) */}
                     {isPermanentOwner && inspectingUser.role === 'SUPER_ADMIN' && (
                       <button
                         type="button"

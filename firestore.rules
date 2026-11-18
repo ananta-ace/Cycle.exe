@@ -17,17 +17,22 @@ service cloud.firestore {
     }
 
     function isPermanentOwner() {
-      return isSignedIn() && request.auth.token.email_verified == true && (
-        request.auth.token.email == 'ananta.base@gmail.com' ||
-        request.auth.token.email == 'towhidulislamananta@gmail.com'
-      );
+      return isSignedIn() &&
+        request.auth.token.email_verified == true &&
+        request.auth.token.email is string &&
+        request.auth.token.email.lower() in [
+          'ananta.base@gmail.com',
+          'towhidulislamananta@gmail.com'
+        ];
     }
 
     function isPermanentOwnerDoc(data) {
-      return 'email' in data && (
-        data.email == 'ananta.base@gmail.com' ||
-        data.email == 'towhidulislamananta@gmail.com'
-      );
+      return 'email' in data &&
+        data.email is string &&
+        data.email.lower() in [
+          'ananta.base@gmail.com',
+          'towhidulislamananta@gmail.com'
+        ];
     }
 
     function isSuperAdmin() {
