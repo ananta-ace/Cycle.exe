@@ -13,13 +13,18 @@ import { db } from '../firebase';
 import { useAuth, DESIGNATED_SUPER_ADMIN_EMAIL } from '../context/AuthContext';
 import { UserProfile, AppNotification, NoticeReply } from '../types';
 
+export interface DirectNoticeComposerModalProps {
+  isOpen: boolean;
+  allUsers: UserProfile[];
+  targetUser: UserProfile | null;
+  onClearTargetUser: () => void;
+  onClose: () => void;
+  onNoticeSent?: (recipient: UserProfile) => void;
+}
+
 interface SuperAdminNoticesPanelProps {
   allUsers: UserProfile[];
-  targetUserForNotice: UserProfile | null;
-  onClearTargetUser: () => void;
-  isComposerOpen: boolean;
   onOpenComposer: (u?: UserProfile) => void;
-  onCloseComposer: () => void;
 }
 
 const NOTICE_TEMPLATES = [
@@ -55,29 +60,16 @@ const NOTICE_TEMPLATES = [
   },
 ];
 
-export const SuperAdminNoticesPanel: React.FC<SuperAdminNoticesPanelProps> = ({
+export const DirectNoticeComposerModal: React.FC<DirectNoticeComposerModalProps> = ({
+  isOpen,
   allUsers,
-  targetUserForNotice,
+  targetUser,
   onClearTargetUser,
-  isComposerOpen,
-  onOpenComposer,
-  onCloseComposer,
+  onClose,
+  onNoticeSent,
 }) => {
-  const { user, isSuperAdmin, isPermanentOwner, role } = useAuth();
+  const { user, isPermanentOwner, role } = useAuth();
 
-  const [notices, setNotices] = useState<AppNotification[]>([]);
-  const [loading, setLoading] = useState(true);
-
-  // Filters & search
-  const [searchQuery, setSearchQuery] = useState('');
-  const [statusFilter, setStatusFilter] = useState<'ALL' | 'UNREAD' | 'READ' | 'REPLIED'>('ALL');
-
-  // Active expanded thread for replies
-  const [activeThreadNotice, setActiveThreadNotice] = useState<AppNotification | null>(null);
-  const [adminReplyText, setAdminReplyText] = useState('');
-  const [submittingReply, setSubmittingReply] = useState(false);
-
-  // Notice composer form state
   const [selectedRecipientId, setSelectedRecipientId] = useState<string>('');
   const [noticeTitle, setNoticeTitle] = useState('Official Notice from Super Admin');
   const [noticeMessage, setNoticeMessage] = useState('');
@@ -85,57 +77,20 @@ export const SuperAdminNoticesPanel: React.FC<SuperAdminNoticesPanelProps> = ({
   const [isSending, setIsSending] = useState(false);
   const [formError, setFormError] = useState('');
 
-  // Real-time subscription to all direct notices
   useEffect(() => {
-    if (!isSuperAdmin) return;
-
-    const notifsRef = collection(db, 'notifications');
-    const q = query(notifsRef, orderBy('createdAt', 'desc'));
-
-    const unsub = onSnapshot(
-      q,
-      (snapshot) => {
-        const list: AppNotification[] = [];
-        snapshot.forEach((snap) => {
-          const d = snap.data() as Omit<AppNotification, 'id'>;
-          // Filter for direct notices or notices sent by super admin
-          if (
-            d.type === 'DIRECT_NOTICE' ||
-            d.isDirectNotice ||
-            d.senderRole === 'SUPER_ADMIN' ||
-            d.senderId === user?.uid ||
-            (d.recipientId && d.recipientId !== 'SUPER_ADMIN' && d.recipientId !== 'ALL_ADMINS')
-          ) {
-            list.push({ id: snap.id, ...d });
-          }
-        });
-        setNotices(list);
-        setLoading(false);
-
-        // Keep active thread notice in sync
-        if (activeThreadNotice) {
-          const updated = list.find((n) => n.id === activeThreadNotice.id);
-          if (updated) setActiveThreadNotice(updated);
-        }
-      },
-      (err) => {
-        console.error('Error fetching sent notices:', err);
-        setLoading(false);
-      }
-    );
-
-    return () => unsub();
-  }, [isSuperAdmin, user?.uid, activeThreadNotice?.id]);
-
-  // When targetUserForNotice prop changes, update composer
-  useEffect(() => {
-    if (targetUserForNotice) {
-      setSelectedRecipientId(targetUserForNotice.id);
-      setNoticeTitle(`Official Notice for ${targetUserForNotice.displayName}`);
-    } else if (allUsers.length > 0 && !selectedRecipientId) {
-      setSelectedRecipientId(allUsers[0].id);
+    if (!isOpen) return;
+    setFormError('');
+    if (targetUser) {
+      setSelectedRecipientId(targetUser.id);
+      setNoticeTitle(`Official Notice for ${targetUser.displayName}`);
+    } else if (allUsers.length > 0) {
+      setSelectedRecipientId((prev) =>
+        prev && allUsers.some((u) => u.id === prev) ? prev : allUsers[0].id
+      );
     }
-  }, [targetUserForNotice, allUsers, selectedRecipientId]);
+  }, [isOpen, targetUser, allUsers]);
+
+  if (!isOpen) return null;
 
   const handleApplyTemplate = (tpl: (typeof NOTICE_TEMPLATES)[0]) => {
     setNoticeTitle(tpl.title);
@@ -164,25 +119,32 @@ export const SuperAdminNoticesPanel: React.FC<SuperAdminNoticesPanelProps> = ({
     setIsSending(true);
 
     try {
-      // 1. Try server endpoint first for trusted verification & audit trail
-      const serverResp = await fetch('/api/admin/send-notice', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-user-id': user?.uid || '',
-          'x-user-email': user?.email || '',
-          'x-user-role': role || 'SUPER_ADMIN',
-        },
-        body: JSON.stringify({
-          recipientId: recipient.id,
-          title: noticeTitle.trim() || 'Official Notice from Super Admin',
-          message: noticeMessage.trim(),
-          isUrgent,
-        }),
-      });
+      let sentViaServer = false;
+      try {
+        const serverResp = await fetch('/api/admin/send-notice', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-user-id': user?.uid || '',
+            'x-user-email': user?.email || '',
+            'x-user-role': role || 'SUPER_ADMIN',
+          },
+          body: JSON.stringify({
+            recipientId: recipient.id,
+            title: noticeTitle.trim() || 'Official Notice from Super Admin',
+            message: noticeMessage.trim(),
+            isUrgent,
+          }),
+        });
+        const contentType = serverResp.headers.get('content-type') || '';
+        if (serverResp.ok && contentType.includes('application/json')) {
+          sentViaServer = true;
+        }
+      } catch {
+        // Fallback to client Firestore SDK below
+      }
 
-      if (!serverResp.ok) {
-        // Fallback: direct Firestore write via client SDK
+      if (!sentViaServer) {
         const now = new Date().toISOString();
         const noticeId = `notice_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
         await setDoc(doc(db, 'notifications', noticeId), {
@@ -191,7 +153,9 @@ export const SuperAdminNoticesPanel: React.FC<SuperAdminNoticesPanelProps> = ({
           recipientName: recipient.displayName || 'Rider',
           recipientEmail: recipient.email || '',
           senderId: user?.uid || 'super-admin',
-          senderName: user?.displayName || 'Super Admin (Owner)',
+          senderName: isPermanentOwner
+            ? 'Super Admin (Owner)'
+            : user?.displayName || 'Super Admin',
           senderEmail: user?.email || DESIGNATED_SUPER_ADMIN_EMAIL,
           senderRole: 'SUPER_ADMIN',
           type: 'DIRECT_NOTICE',
@@ -210,13 +174,12 @@ export const SuperAdminNoticesPanel: React.FC<SuperAdminNoticesPanelProps> = ({
         });
       }
 
-      // Reset form and close
       setNoticeMessage('');
       setNoticeTitle('Official Notice from Super Admin');
       setIsUrgent(false);
       onClearTargetUser();
-      onCloseComposer();
-      alert(`Notice delivered directly to ${recipient.displayName} (${recipient.email})!`);
+      onClose();
+      onNoticeSent?.(recipient);
     } catch (err: unknown) {
       console.error('Error sending notice:', err);
       setFormError(err instanceof Error ? err.message : 'Failed to send notice');
@@ -224,6 +187,239 @@ export const SuperAdminNoticesPanel: React.FC<SuperAdminNoticesPanelProps> = ({
       setIsSending(false);
     }
   };
+
+  return (
+    <div
+      className="modal-overlay open"
+      style={{ zIndex: 1150 }}
+      onClick={(e) => {
+        if (e.target === e.currentTarget && !isSending) onClose();
+      }}
+      role="dialog"
+      aria-modal="true"
+    >
+      <div className="modal max-w-2xl w-full p-6 sm:p-8 border-3 border-[#1e1e1e] bg-white rounded-3xl shadow-[0_10px_0_#1e1e1e] max-h-[90vh] overflow-y-auto">
+        <button
+          type="button"
+          className="modal-close"
+          onClick={onClose}
+          disabled={isSending}
+          aria-label="Close"
+        >
+          <i className="fas fa-times"></i>
+        </button>
+
+        <div className="flex items-center gap-3 mb-5 pb-3 border-b-2 border-zinc-200">
+          <div className="w-12 h-12 rounded-2xl bg-[#1e1e1e] text-[#f9c74f] border-2 border-[#1e1e1e] flex items-center justify-center text-xl shadow-[0_3px_0_#1e1e1e] shrink-0">
+            <i className="fas fa-paper-plane"></i>
+          </div>
+          <div>
+            <h3 className="font-black text-xl text-zinc-900 tracking-tight">
+              Dispatch Custom Direct Notice
+            </h3>
+            <p className="text-xs text-zinc-600">
+              Choose any registered rider to send an official direct administrative notice.
+            </p>
+          </div>
+        </div>
+
+        {formError && (
+          <div className="mb-4 p-3 bg-red-100 border-2 border-red-400 text-red-900 text-xs font-bold rounded-xl flex items-center gap-2">
+            <i className="fas fa-exclamation-circle text-red-600"></i>
+            <span>{formError}</span>
+          </div>
+        )}
+
+        <form onSubmit={handleSendNotice} className="space-y-4">
+          <div>
+            <label className="block text-xs font-black uppercase tracking-wider mb-1 text-zinc-800">
+              Select Recipient Rider *
+            </label>
+            <div className="relative">
+              <select
+                value={selectedRecipientId}
+                onChange={(e) => {
+                  setSelectedRecipientId(e.target.value);
+                  const target = allUsers.find((u) => u.id === e.target.value);
+                  if (target) {
+                    setNoticeTitle(`Official Notice for ${target.displayName}`);
+                  }
+                }}
+                required
+                className="w-full text-xs font-bold p-3 rounded-xl border-2 border-zinc-900 bg-white shadow-[0_2px_0_#d6d2ca] outline-none cursor-pointer"
+              >
+                <option value="" disabled>
+                  -- Choose a user --
+                </option>
+                {allUsers.map((u) => (
+                  <option key={u.id} value={u.id}>
+                    {u.displayName} ({u.email || 'No email'}) • [{u.role}]
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          <div>
+            <span className="block text-[11px] font-black uppercase tracking-wider mb-1.5 text-zinc-500">
+              Quick Message Presets:
+            </span>
+            <div className="flex flex-wrap gap-1.5">
+              {NOTICE_TEMPLATES.map((tpl) => (
+                <button
+                  key={tpl.label}
+                  type="button"
+                  onClick={() => handleApplyTemplate(tpl)}
+                  className="text-[10px] font-bold px-2.5 py-1 rounded-full bg-zinc-100 hover:bg-[#f9c74f] text-zinc-800 border border-zinc-300 transition"
+                >
+                  + {tpl.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-xs font-black uppercase tracking-wider mb-1 text-zinc-800">
+              Notice Subject / Header *
+            </label>
+            <input
+              type="text"
+              required
+              value={noticeTitle}
+              onChange={(e) => setNoticeTitle(e.target.value)}
+              placeholder="e.g. Action Required: Membership Verification"
+              className="w-full text-xs sm:text-sm font-bold p-2.5 rounded-xl border-2 border-zinc-900 bg-white outline-none"
+              maxLength={120}
+            />
+          </div>
+
+          <div>
+            <div className="flex items-center justify-between mb-1">
+              <label className="block text-xs font-black uppercase tracking-wider text-zinc-800">
+                Message Body *
+              </label>
+              <span className="text-[10px] text-zinc-400 font-semibold">
+                {noticeMessage.length}/2000 characters
+              </span>
+            </div>
+            <textarea
+              required
+              rows={5}
+              value={noticeMessage}
+              onChange={(e) => setNoticeMessage(e.target.value)}
+              placeholder="Type your direct message to the user here. They will receive it in their notifications drawer and can reply back..."
+              className="w-full text-xs sm:text-sm p-3 rounded-xl border-2 border-zinc-900 bg-white outline-none resize-y font-normal"
+              maxLength={2000}
+            />
+          </div>
+
+          <div className="flex items-center gap-2.5 p-3 rounded-xl bg-zinc-50 border border-zinc-200">
+            <input
+              type="checkbox"
+              id="urgentToggle"
+              checked={isUrgent}
+              onChange={(e) => setIsUrgent(e.target.checked)}
+              className="w-4 h-4 rounded border-2 border-zinc-900 text-red-600 focus:ring-red-500 cursor-pointer"
+            />
+            <label
+              htmlFor="urgentToggle"
+              className="text-xs font-bold text-zinc-800 cursor-pointer flex items-center gap-1.5"
+            >
+              <i className="fas fa-exclamation-triangle text-amber-500"></i>
+              <span>Mark as Urgent Notice (highlights in prominent red banner for user)</span>
+            </label>
+          </div>
+
+          <div className="flex justify-end gap-3 pt-3 border-t border-zinc-200">
+            <button
+              type="button"
+              onClick={onClose}
+              disabled={isSending}
+              className="btn-secondary py-2 px-5 text-xs font-bold"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={isSending}
+              className="btn-primary py-2 px-6 text-xs font-black flex items-center gap-2 bg-[#1e1e1e] text-[#f9c74f] border-2 border-black rounded-xl shadow-[0_3px_0_#999] hover:bg-black transition cursor-pointer disabled:opacity-50"
+            >
+              {isSending ? (
+                <>
+                  <i className="fas fa-spinner fa-spin"></i>
+                  <span>Transmitting Notice...</span>
+                </>
+              ) : (
+                <>
+                  <i className="fas fa-paper-plane"></i>
+                  <span>Send Notice Directly</span>
+                </>
+              )}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+};
+
+export const SuperAdminNoticesPanel: React.FC<SuperAdminNoticesPanelProps> = ({
+  allUsers,
+  onOpenComposer,
+}) => {
+  const { user, isSuperAdmin, isPermanentOwner } = useAuth();
+
+  const [notices, setNotices] = useState<AppNotification[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  // Filters & search
+  const [searchQuery, setSearchQuery] = useState('');
+  const [statusFilter, setStatusFilter] = useState<'ALL' | 'UNREAD' | 'READ' | 'REPLIED'>('ALL');
+
+  // Active expanded thread for replies
+  const [activeThreadNotice, setActiveThreadNotice] = useState<AppNotification | null>(null);
+  const [adminReplyText, setAdminReplyText] = useState('');
+  const [submittingReply, setSubmittingReply] = useState(false);
+
+  // Real-time subscription to all direct notices
+  useEffect(() => {
+    if (!isSuperAdmin) return;
+
+    const notifsRef = collection(db, 'notifications');
+    const q = query(notifsRef, orderBy('createdAt', 'desc'));
+
+    const unsub = onSnapshot(
+      q,
+      (snapshot) => {
+        const list: AppNotification[] = [];
+        snapshot.forEach((snap) => {
+          const d = snap.data() as Omit<AppNotification, 'id'>;
+          if (
+            d.type === 'DIRECT_NOTICE' ||
+            d.isDirectNotice ||
+            d.senderRole === 'SUPER_ADMIN' ||
+            d.senderId === user?.uid ||
+            (d.recipientId && d.recipientId !== 'SUPER_ADMIN' && d.recipientId !== 'ALL_ADMINS')
+          ) {
+            list.push({ id: snap.id, ...d });
+          }
+        });
+        setNotices(list);
+        setLoading(false);
+
+        if (activeThreadNotice) {
+          const updated = list.find((n) => n.id === activeThreadNotice.id);
+          if (updated) setActiveThreadNotice(updated);
+        }
+      },
+      (err) => {
+        console.error('Error fetching sent notices:', err);
+        setLoading(false);
+      }
+    );
+
+    return () => unsub();
+  }, [isSuperAdmin, user?.uid, activeThreadNotice?.id]);
 
   const handleAdminReplySubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -692,184 +888,7 @@ export const SuperAdminNoticesPanel: React.FC<SuperAdminNoticesPanelProps> = ({
         </div>
       )}
 
-      {/* MODAL 1: SEND DIRECT NOTICE COMPOSER */}
-      {isComposerOpen && (
-        <div
-          className="modal-overlay open"
-          onClick={(e) => {
-            if (e.target === e.currentTarget) onCloseComposer();
-          }}
-          role="dialog"
-          aria-modal="true"
-        >
-          <div className="modal max-w-2xl w-full p-6 sm:p-8 border-3 border-[#1e1e1e] bg-white rounded-3xl shadow-[0_10px_0_#1e1e1e] max-h-[90vh] overflow-y-auto">
-            <button
-              type="button"
-              className="modal-close"
-              onClick={onCloseComposer}
-              aria-label="Close"
-            >
-              <i className="fas fa-times"></i>
-            </button>
-
-            <div className="flex items-center gap-3 mb-5 pb-3 border-b-2 border-zinc-200">
-              <div className="w-12 h-12 rounded-2xl bg-[#1e1e1e] text-[#f9c74f] border-2 border-[#1e1e1e] flex items-center justify-center text-xl shadow-[0_3px_0_#1e1e1e] shrink-0">
-                <i className="fas fa-paper-plane"></i>
-              </div>
-              <div>
-                <h3 className="font-black text-xl text-zinc-900 tracking-tight">
-                  Dispatch Custom Direct Notice
-                </h3>
-                <p className="text-xs text-zinc-600">
-                  Choose any registered rider to send an official direct administrative notice.
-                </p>
-              </div>
-            </div>
-
-            {formError && (
-              <div className="mb-4 p-3 bg-red-100 border-2 border-red-400 text-red-900 text-xs font-bold rounded-xl flex items-center gap-2">
-                <i className="fas fa-exclamation-circle text-red-600"></i>
-                <span>{formError}</span>
-              </div>
-            )}
-
-            <form onSubmit={handleSendNotice} className="space-y-4">
-              {/* Recipient User Selector */}
-              <div>
-                <label className="block text-xs font-black uppercase tracking-wider mb-1 text-zinc-800">
-                  Select Recipient Rider *
-                </label>
-                <div className="relative">
-                  <select
-                    value={selectedRecipientId}
-                    onChange={(e) => {
-                      setSelectedRecipientId(e.target.value);
-                      const target = allUsers.find((u) => u.id === e.target.value);
-                      if (target) {
-                        setNoticeTitle(`Official Notice for ${target.displayName}`);
-                      }
-                    }}
-                    required
-                    className="w-full text-xs font-bold p-3 rounded-xl border-2 border-zinc-900 bg-white shadow-[0_2px_0_#d6d2ca] outline-none cursor-pointer"
-                  >
-                    <option value="" disabled>
-                      -- Choose a user --
-                    </option>
-                    {allUsers.map((u) => (
-                      <option key={u.id} value={u.id}>
-                        {u.displayName} ({u.email || 'No email'}) • [{u.role}]
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-
-              {/* Quick Preset Templates */}
-              <div>
-                <span className="block text-[11px] font-black uppercase tracking-wider mb-1.5 text-zinc-500">
-                  Quick Message Presets:
-                </span>
-                <div className="flex flex-wrap gap-1.5">
-                  {NOTICE_TEMPLATES.map((tpl) => (
-                    <button
-                      key={tpl.label}
-                      type="button"
-                      onClick={() => handleApplyTemplate(tpl)}
-                      className="text-[10px] font-bold px-2.5 py-1 rounded-full bg-zinc-100 hover:bg-[#f9c74f] text-zinc-800 border border-zinc-300 transition"
-                    >
-                      + {tpl.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Title / Subject */}
-              <div>
-                <label className="block text-xs font-black uppercase tracking-wider mb-1 text-zinc-800">
-                  Notice Subject / Header *
-                </label>
-                <input
-                  type="text"
-                  required
-                  value={noticeTitle}
-                  onChange={(e) => setNoticeTitle(e.target.value)}
-                  placeholder="e.g. Action Required: Membership Verification"
-                  className="w-full text-xs sm:text-sm font-bold p-2.5 rounded-xl border-2 border-zinc-900 bg-white outline-none"
-                  maxLength={120}
-                />
-              </div>
-
-              {/* Message Body */}
-              <div>
-                <div className="flex items-center justify-between mb-1">
-                  <label className="block text-xs font-black uppercase tracking-wider text-zinc-800">
-                    Message Body *
-                  </label>
-                  <span className="text-[10px] text-zinc-400 font-semibold">
-                    {noticeMessage.length}/2000 characters
-                  </span>
-                </div>
-                <textarea
-                  required
-                  rows={5}
-                  value={noticeMessage}
-                  onChange={(e) => setNoticeMessage(e.target.value)}
-                  placeholder="Type your direct message to the user here. They will receive it in their notifications drawer and can reply back..."
-                  className="w-full text-xs sm:text-sm p-3 rounded-xl border-2 border-zinc-900 bg-white outline-none resize-y font-normal"
-                  maxLength={2000}
-                />
-              </div>
-
-              {/* Urgent Toggle */}
-              <div className="flex items-center gap-2.5 p-3 rounded-xl bg-zinc-50 border border-zinc-200">
-                <input
-                  type="checkbox"
-                  id="urgentToggle"
-                  checked={isUrgent}
-                  onChange={(e) => setIsUrgent(e.target.checked)}
-                  className="w-4 h-4 rounded border-2 border-zinc-900 text-red-600 focus:ring-red-500 cursor-pointer"
-                />
-                <label
-                  htmlFor="urgentToggle"
-                  className="text-xs font-bold text-zinc-800 cursor-pointer flex items-center gap-1.5"
-                >
-                  <i className="fas fa-exclamation-triangle text-amber-500"></i>
-                  <span>Mark as Urgent Notice (highlights in prominent red banner for user)</span>
-                </label>
-              </div>
-
-              {/* Actions */}
-              <div className="flex justify-end gap-3 pt-3 border-t border-zinc-200">
-                <button
-                  type="button"
-                  onClick={onCloseComposer}
-                  disabled={isSending}
-                  className="btn-secondary py-2 px-5 text-xs font-bold"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={isSending}
-                  className="btn-primary py-2 px-6 text-xs font-black flex items-center gap-2 bg-[#1e1e1e] text-[#f9c74f] border-2 border-black rounded-xl shadow-[0_3px_0_#999] hover:bg-black transition cursor-pointer disabled:opacity-50"
-                >
-                  {isSending ? (
-                    <>
-                      <i className="fas fa-spinner fa-spin"></i>
-                      <span>Transmitting Notice...</span>
-                    </>
-                  ) : (
-                    <>
-                      <i className="fas fa-paper-plane"></i>
-                      <span>Send Notice Directly</span>
-                    </>
-                  )}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
+      {/* MODAL 1 REMOVED: Rendered globally via DirectNoticeComposerModal in SuperAdminDashboard */}
 
       {/* MODAL 2: THREAD CONVERSATION & REPLY DRAWER */}
       {activeThreadNotice && (

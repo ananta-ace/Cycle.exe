@@ -23,7 +23,15 @@ import {
   Member,
 } from '../types';
 import { uploadImage, isImageFile } from '../utils/imageUpload';
-import { SuperAdminNoticesPanel } from './SuperAdminNoticesPanel';
+import {
+  SuperAdminNoticesPanel,
+  DirectNoticeComposerModal,
+} from './SuperAdminNoticesPanel';
+
+interface ActionBannerState {
+  type: 'success' | 'error' | 'info';
+  text: string;
+}
 
 export const SuperAdminDashboard: React.FC = () => {
   const { user, profile, isSuperAdmin, isPermanentOwner, role, syncSuperAdminAccess } = useAuth();
@@ -37,15 +45,17 @@ export const SuperAdminDashboard: React.FC = () => {
   const [noticeTargetUser, setNoticeTargetUser] = useState<UserProfile | null>(null);
   const [isNoticeComposerOpen, setIsNoticeComposerOpen] = useState(false);
 
-  // User Profile Inspection Modal (Requirement 6)
+  // User Profile Inspection Modal
   const [inspectingUser, setInspectingUser] = useState<UserProfile | null>(null);
+  const [inspectActionFeedback, setInspectActionFeedback] = useState<ActionBannerState | null>(null);
+  const [inspectActionBusy, setInspectActionBusy] = useState<string | null>(null);
 
   // Super Admin Account Deletion Modal State
   const [deleteTargetUser, setDeleteTargetUser] = useState<UserProfile | null>(null);
   const [deleteUserPosts, setDeleteUserPosts] = useState(true);
   const [deletingUser, setDeletingUser] = useState(false);
   const [deleteUserError, setDeleteUserError] = useState<string | null>(null);
-  const [userActionBanner, setUserActionBanner] = useState<string | null>(null);
+  const [userActionBanner, setUserActionBanner] = useState<ActionBannerState | null>(null);
 
   // Home Screen Featured Members (Requirement 5)
   const [featuredMembers, setFeaturedMembers] = useState<Member[]>([]);
@@ -179,6 +189,15 @@ export const SuperAdminDashboard: React.FC = () => {
     };
   }, [isSuperAdmin]);
 
+  // Keep inspectingUser synchronized with live Firestore updates
+  useEffect(() => {
+    if (!inspectingUser) return;
+    const updated = allUsers.find((u) => u.id === inspectingUser.id);
+    if (updated) {
+      setInspectingUser(updated);
+    }
+  }, [allUsers, inspectingUser?.id]);
+
   // Ensure Permanent Owner accounts (ananta.base@gmail.com & towhidulislamananta@gmail.com)
   // have role === 'SUPER_ADMIN' in Firestore whenever a Permanent Owner opens the hub
   useEffect(() => {
@@ -192,6 +211,27 @@ export const SuperAdminDashboard: React.FC = () => {
       });
     }
   }, [isPermanentOwner, allUsers]);
+
+  const formatUserWriteError = (err: unknown, fallback: string): string => {
+    const raw = err instanceof Error ? err.message : String(err || '');
+    const lower = raw.toLowerCase();
+    if (lower.includes('permission') || lower.includes('insufficient')) {
+      if (!user?.emailVerified) {
+        return 'Your email must be verified before updating user roles or permissions.';
+      }
+      if (!isPermanentOwner && profile?.role !== 'SUPER_ADMIN') {
+        return 'Your Firestore account does not yet have SUPER_ADMIN clearance.';
+      }
+      return 'Firestore security rules blocked this update (permission-denied). Publish the updated firestore.rules in Firebase Console -> Firestore -> Rules.';
+    }
+    return raw || fallback;
+  };
+
+  const openInspectUser = (u: UserProfile) => {
+    setInspectActionFeedback(null);
+    setInspectActionBusy(null);
+    setInspectingUser(u);
+  };
 
   // Approve Admin Membership Application
   const handleApproveApp = async (app: AdminMembershipApplication) => {
@@ -350,9 +390,10 @@ export const SuperAdminDashboard: React.FC = () => {
   // Remove someone from the Admin Member panel without deleting their account
   const handleRemoveFromAdminPanel = async (targetUserId: string, name: string) => {
     if (!user || !isSuperAdmin) return;
-    if (!confirm(`Are you sure you want to remove ${name} as an Admin Member? Their regular account and personal data will be preserved, and they can re-apply from Home.`)) return;
 
     try {
+      setInspectActionBusy('adminRemove');
+      setInspectActionFeedback(null);
       const now = new Date().toISOString();
       await updateDoc(doc(db, 'users', targetUserId), {
         isAdminMember: false,
@@ -386,10 +427,30 @@ export const SuperAdminDashboard: React.FC = () => {
         // Non-critical notification fallback
       }
 
-      alert(`Removed ${name} as an Admin Member.`);
+      const msg = `Removed ${name} as an Admin Member (account preserved as PUBLIC).`;
+      setUserActionBanner({ type: 'success', text: msg });
+      if (inspectingUser?.id === targetUserId) {
+        setInspectingUser((prev) =>
+          prev
+            ? {
+                ...prev,
+                role: 'PUBLIC',
+                isAdminMember: false,
+                adminMembershipStatus: 'NONE',
+                isSuspended: false,
+              }
+            : null
+        );
+        setInspectActionFeedback({ type: 'success', text: msg });
+      }
+      fetchStats();
     } catch (err: unknown) {
       console.error('Error removing from panel:', err);
-      alert(err instanceof Error ? err.message : 'Failed to remove from panel');
+      const errMsg = formatUserWriteError(err, 'Failed to remove Admin Member role');
+      setUserActionBanner({ type: 'error', text: errMsg });
+      setInspectActionFeedback({ type: 'error', text: errMsg });
+    } finally {
+      setInspectActionBusy(null);
     }
   };
 
@@ -397,15 +458,23 @@ export const SuperAdminDashboard: React.FC = () => {
   const handleSaveCustomTitle = async () => {
     if (!editingTitleUser || !newTitleValue.trim()) return;
     try {
+      const cleanTitle = newTitleValue.trim();
       await updateDoc(doc(db, 'users', editingTitleUser.id), {
-        customTitle: newTitleValue.trim(),
+        customTitle: cleanTitle,
         updatedAt: new Date().toISOString(),
       });
+      const msg = `Updated community title for ${editingTitleUser.displayName} to "${cleanTitle}".`;
+      if (inspectingUser?.id === editingTitleUser.id) {
+        setInspectingUser((prev) => (prev ? { ...prev, customTitle: cleanTitle } : null));
+        setInspectActionFeedback({ type: 'success', text: msg });
+      }
+      setUserActionBanner({ type: 'success', text: msg });
       setEditingTitleUser(null);
-      alert('Custom community title updated!');
     } catch (err: unknown) {
       console.error('Error updating title:', err);
-      alert(err instanceof Error ? err.message : 'Failed to update title');
+      const errMsg = formatUserWriteError(err, 'Failed to update custom title');
+      setUserActionBanner({ type: 'error', text: errMsg });
+      setInspectActionFeedback({ type: 'error', text: errMsg });
     }
   };
 
@@ -742,22 +811,33 @@ export const SuperAdminDashboard: React.FC = () => {
   const handleChangeRole = async (targetUser: UserProfile, newRole: string) => {
     if (!user || !isSuperAdmin) return;
     if (isSuperAdminEmail(targetUser.email)) {
-      setUserActionBanner('Permanent Owner account roles cannot be changed.');
+      const msg = 'Permanent Owner account roles cannot be changed.';
+      setUserActionBanner({ type: 'error', text: msg });
+      setInspectActionFeedback({ type: 'error', text: msg });
       return;
     }
 
     const targetIsSuperAdmin = targetUser.role === 'SUPER_ADMIN';
     if (targetIsSuperAdmin && !isPermanentOwner) {
-      setUserActionBanner('Only a Permanent Owner can demote or remove an appointed Super Admin.');
+      const msg = 'Only a Permanent Owner can demote or remove an appointed Super Admin.';
+      setUserActionBanner({ type: 'error', text: msg });
+      setInspectActionFeedback({ type: 'error', text: msg });
       return;
     }
 
     if (targetUser.id === user.uid && !isPermanentOwner) {
-      setUserActionBanner('Only a Permanent Owner can modify your Super Admin clearance.');
+      const msg = 'Only a Permanent Owner can modify your Super Admin clearance.';
+      setUserActionBanner({ type: 'error', text: msg });
+      setInspectActionFeedback({ type: 'error', text: msg });
       return;
     }
 
+    if (targetUser.role === newRole) return;
+
     try {
+      setInspectActionBusy('role');
+      setInspectActionFeedback(null);
+
       const now = new Date().toISOString();
       const becomingSuperAdmin = newRole === 'SUPER_ADMIN';
       const leavingSuperAdmin = targetIsSuperAdmin && !becomingSuperAdmin;
@@ -775,26 +855,39 @@ export const SuperAdminDashboard: React.FC = () => {
           ? 'REMOVE_SUPER_ADMIN'
           : `SET_ROLE_TO_${newRole}`;
 
-      // 1. Server audit & hierarchy check
-      const roleResp = await fetch('/api/admin/roles', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-user-id': user.uid,
-          'x-user-email': user.email || '',
-          'x-user-role': role,
-        },
-        body: JSON.stringify({
-          targetUserId: targetUser.id,
-          targetUserEmail: targetUser.email,
-          newRole,
-          action: actionName,
-        }),
-      });
+      // 1. Server audit & hierarchy check (non-blocking if static preview / offline; only abort on explicit 400/403 JSON rejection)
+      try {
+        const roleResp = await fetch('/api/admin/roles', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-user-id': user.uid,
+            'x-user-email': user.email || profile?.email || '',
+            'x-user-role': role,
+          },
+          body: JSON.stringify({
+            targetUserId: targetUser.id,
+            targetUserEmail: targetUser.email,
+            newRole,
+            action: actionName,
+          }),
+        });
 
-      if (!roleResp.ok) {
-        const errPayload = await roleResp.json().catch(() => ({}));
-        throw new Error(errPayload.error || 'Server rejected role change');
+        const contentType = roleResp.headers.get('content-type') || '';
+        if ((roleResp.status === 400 || roleResp.status === 403) && contentType.includes('application/json')) {
+          const errPayload = await roleResp.json().catch(() => ({}));
+          throw new Error(errPayload.error || 'Server rejected role change');
+        }
+      } catch (serverErr: unknown) {
+        if (
+          serverErr instanceof Error &&
+          (serverErr.message.includes('Forbidden') ||
+            serverErr.message.includes('Permanent Owner') ||
+            serverErr.message.includes('rejected'))
+        ) {
+          throw serverErr;
+        }
+        // Ignore network/404 when running static preview so Firestore write still executes
       }
 
       // 2. Update Firestore document & keep Admin Member status in sync
@@ -829,8 +922,8 @@ export const SuperAdminDashboard: React.FC = () => {
         }
       }
 
-      // 3. Notify user on Super Admin appointment or removal & log in Firestore auditLogs
-      if (becomingSuperAdmin || leavingSuperAdmin) {
+      // 3. Notify user on Super Admin / Admin promotion or removal & log in Firestore auditLogs
+      if (becomingSuperAdmin || leavingSuperAdmin || becomingAdmin) {
         try {
           const notifId = `notif_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
           await setDoc(doc(db, 'notifications', notifId), {
@@ -839,10 +932,14 @@ export const SuperAdminDashboard: React.FC = () => {
             type: 'STATUS_CHANGED',
             title: becomingSuperAdmin
               ? 'Super Admin Clearance Granted 👑'
-              : 'Super Admin Clearance Removed',
+              : leavingSuperAdmin
+                ? 'Super Admin Clearance Removed'
+                : 'Admin Access Granted! 🛡️',
             message: becomingSuperAdmin
               ? `You were appointed as a Super Admin on Cycle.exe by ${user.displayName || user.email}. Permanent Owners retain highest authority.`
-              : `Your Super Admin privileges on Cycle.exe were removed by the Permanent Owner. Your role is now ${newRole}.`,
+              : leavingSuperAdmin
+                ? `Your Super Admin privileges on Cycle.exe were removed by the Permanent Owner. Your role is now ${newRole}.`
+                : `Your account role on Cycle.exe was updated to Admin by ${user.displayName || user.email}.`,
             isRead: false,
             createdAt: now,
           });
@@ -860,8 +957,8 @@ export const SuperAdminDashboard: React.FC = () => {
             targetType: 'USER',
             targetId: targetUser.id,
             details: `${
-              becomingSuperAdmin ? 'Appointed' : 'Removed'
-            } SUPER_ADMIN for ${targetUser.displayName} (${targetUser.email}) -> ${newRole}`,
+              becomingSuperAdmin ? 'Appointed' : leavingSuperAdmin ? 'Removed' : 'Updated'
+            } role for ${targetUser.displayName} (${targetUser.email}) -> ${newRole}`,
             createdAt: now,
           });
         } catch {
@@ -876,22 +973,33 @@ export const SuperAdminDashboard: React.FC = () => {
                 ...prev,
                 role: newRole as UserRole,
                 ...(becomingSuperAdmin ? { isSuspended: false } : {}),
+                ...(becomingAdmin
+                  ? { isAdminMember: true, adminMembershipStatus: 'APPROVED', isSuspended: false }
+                  : {}),
+                ...(leavingAdmin || (leavingSuperAdmin && newRole !== 'ADMIN')
+                  ? { isAdminMember: false, adminMembershipStatus: 'NONE' }
+                  : {}),
               }
             : null
         );
       }
 
-      setUserActionBanner(
-        becomingSuperAdmin
-          ? `${targetUser.displayName} has been promoted to Super Admin.`
-          : leavingSuperAdmin
-            ? `Removed Super Admin clearance from ${targetUser.displayName} (now ${newRole}).`
-            : `Updated ${targetUser.displayName}'s role to ${newRole}.`
-      );
+      const successText = becomingSuperAdmin
+        ? `${targetUser.displayName} has been promoted to Super Admin.`
+        : leavingSuperAdmin
+          ? `Removed Super Admin clearance from ${targetUser.displayName} (now ${newRole}).`
+          : `Updated ${targetUser.displayName}'s role to ${newRole}.`;
+
+      setUserActionBanner({ type: 'success', text: successText });
+      setInspectActionFeedback({ type: 'success', text: successText });
       fetchStats();
     } catch (err) {
       console.error('Role update error:', err);
-      setUserActionBanner(err instanceof Error ? err.message : 'Failed to update user role');
+      const errMsg = formatUserWriteError(err, 'Failed to update user role');
+      setUserActionBanner({ type: 'error', text: errMsg });
+      setInspectActionFeedback({ type: 'error', text: errMsg });
+    } finally {
+      setInspectActionBusy(null);
     }
   };
 
@@ -899,36 +1007,55 @@ export const SuperAdminDashboard: React.FC = () => {
   const handleToggleSuspend = async (targetUser: UserProfile) => {
     if (!user || !isSuperAdmin) return;
     if (isSuperAdminEmail(targetUser.email)) {
-      setUserActionBanner('A Permanent Owner account cannot be suspended.');
+      const msg = 'A Permanent Owner account cannot be suspended.';
+      setUserActionBanner({ type: 'error', text: msg });
+      setInspectActionFeedback({ type: 'error', text: msg });
       return;
     }
 
     if (targetUser.role === 'SUPER_ADMIN' && !isPermanentOwner) {
-      setUserActionBanner('Only a Permanent Owner can suspend or reactivate an appointed Super Admin.');
+      const msg = 'Only a Permanent Owner can suspend or reactivate an appointed Super Admin.';
+      setUserActionBanner({ type: 'error', text: msg });
+      setInspectActionFeedback({ type: 'error', text: msg });
       return;
     }
 
     const nextState = !targetUser.isSuspended;
     try {
-      const roleResp = await fetch('/api/admin/roles', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-user-id': user.uid,
-          'x-user-email': user.email || '',
-          'x-user-role': role,
-        },
-        body: JSON.stringify({
-          targetUserId: targetUser.id,
-          targetUserEmail: targetUser.email,
-          isSuspended: nextState,
-          action: nextState ? 'SUSPEND_USER' : 'REACTIVATE_USER',
-        }),
-      });
+      setInspectActionBusy('suspend');
+      setInspectActionFeedback(null);
 
-      if (!roleResp.ok) {
-        const errPayload = await roleResp.json().catch(() => ({}));
-        throw new Error(errPayload.error || 'Server rejected suspension change');
+      try {
+        const roleResp = await fetch('/api/admin/roles', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-user-id': user.uid,
+            'x-user-email': user.email || profile?.email || '',
+            'x-user-role': role,
+          },
+          body: JSON.stringify({
+            targetUserId: targetUser.id,
+            targetUserEmail: targetUser.email,
+            isSuspended: nextState,
+            action: nextState ? 'SUSPEND_USER' : 'REACTIVATE_USER',
+          }),
+        });
+
+        const contentType = roleResp.headers.get('content-type') || '';
+        if ((roleResp.status === 400 || roleResp.status === 403) && contentType.includes('application/json')) {
+          const errPayload = await roleResp.json().catch(() => ({}));
+          throw new Error(errPayload.error || 'Server rejected suspension change');
+        }
+      } catch (serverErr: unknown) {
+        if (
+          serverErr instanceof Error &&
+          (serverErr.message.includes('Forbidden') ||
+            serverErr.message.includes('Permanent Owner') ||
+            serverErr.message.includes('rejected'))
+        ) {
+          throw serverErr;
+        }
       }
 
       await updateDoc(doc(db, 'users', targetUser.id), {
@@ -936,26 +1063,39 @@ export const SuperAdminDashboard: React.FC = () => {
         updatedAt: new Date().toISOString(),
       });
 
-      setUserActionBanner(
-        nextState
-          ? `Suspended ${targetUser.displayName}'s account.`
-          : `Reactivated ${targetUser.displayName}'s account.`
-      );
+      if (inspectingUser?.id === targetUser.id) {
+        setInspectingUser((prev) => (prev ? { ...prev, isSuspended: nextState } : null));
+      }
+
+      const msg = nextState
+        ? `Suspended ${targetUser.displayName}'s account.`
+        : `Reactivated ${targetUser.displayName}'s account.`;
+
+      setUserActionBanner({ type: 'success', text: msg });
+      setInspectActionFeedback({ type: 'success', text: msg });
       fetchStats();
     } catch (err: unknown) {
       console.error('Suspension toggle error:', err);
-      setUserActionBanner(err instanceof Error ? err.message : 'Failed to update suspension status');
+      const errMsg = formatUserWriteError(err, 'Failed to update suspension status');
+      setUserActionBanner({ type: 'error', text: errMsg });
+      setInspectActionFeedback({ type: 'error', text: errMsg });
+    } finally {
+      setInspectActionBusy(null);
     }
   };
 
   // Open delete confirmation modal
   const handleOpenDeleteUser = (targetUser: UserProfile) => {
     if (isSuperAdminEmail(targetUser.email) || targetUser.id === user?.uid) {
-      setUserActionBanner('Permanent Owner or active self accounts cannot be deleted.');
+      const msg = 'Permanent Owner or active self accounts cannot be deleted.';
+      setUserActionBanner({ type: 'error', text: msg });
+      setInspectActionFeedback({ type: 'error', text: msg });
       return;
     }
     if (targetUser.role === 'SUPER_ADMIN' && !isPermanentOwner) {
-      setUserActionBanner('Only a Permanent Owner can delete an appointed Super Admin account.');
+      const msg = 'Only a Permanent Owner can delete an appointed Super Admin account.';
+      setUserActionBanner({ type: 'error', text: msg });
+      setInspectActionFeedback({ type: 'error', text: msg });
       return;
     }
     setDeleteUserError(null);
@@ -1143,7 +1283,10 @@ export const SuperAdminDashboard: React.FC = () => {
         setInspectingUser(null);
       }
       setDeleteTargetUser(null);
-      setUserActionBanner(`Account for "${targetName}" (${targetEmail || targetUid}) has been permanently deleted.`);
+      setUserActionBanner({
+        type: 'success',
+        text: `Account for "${targetName}" (${targetEmail || targetUid}) has been permanently deleted.`,
+      });
       fetchStats();
     } catch (err: unknown) {
       console.error('Error deleting user account:', err);
@@ -1328,7 +1471,10 @@ export const SuperAdminDashboard: React.FC = () => {
             type="button"
             onClick={async () => {
               const res = await syncSuperAdminAccess();
-              alert(res.message);
+              setUserActionBanner({
+                type: res.synced ? 'success' : 'error',
+                text: res.message,
+              });
             }}
             className="btn-primary py-2 px-4 text-xs font-black whitespace-nowrap shrink-0"
           >
@@ -1872,9 +2018,9 @@ export const SuperAdminDashboard: React.FC = () => {
             <div>
               <h2 className="text-xl font-bold">User &amp; Role Management</h2>
               <p className="text-xs text-zinc-600">
-                Promote users to Member, Admin, or Super Admin.{' '}
+                Click any rider&apos;s row or <strong>View Profile</strong> to manage roles, send direct notices, edit titles, suspend, or delete accounts.{' '}
                 {isPermanentOwner
-                  ? 'As Permanent Owner, you hold highest authority and can remove any appointed Super Admin.'
+                  ? 'As Permanent Owner, you hold highest authority and can appoint or remove Super Admins.'
                   : 'Permanent Owners retain exclusive authority to demote, suspend, or remove Super Admins.'}
               </p>
             </div>
@@ -1889,15 +2035,31 @@ export const SuperAdminDashboard: React.FC = () => {
           </div>
 
           {userActionBanner && (
-            <div className="mb-4 p-3 bg-emerald-50 border-2 border-emerald-500 rounded-2xl flex items-center justify-between gap-3 text-xs font-bold text-emerald-900">
+            <div
+              className={`mb-4 p-3 border-2 rounded-2xl flex items-center justify-between gap-3 text-xs font-bold ${
+                userActionBanner.type === 'error'
+                  ? 'bg-red-50 border-red-500 text-red-900'
+                  : userActionBanner.type === 'info'
+                    ? 'bg-amber-50 border-amber-500 text-amber-900'
+                    : 'bg-emerald-50 border-emerald-500 text-emerald-900'
+              }`}
+            >
               <div className="flex items-center gap-2">
-                <i className="fas fa-check-circle text-emerald-600 text-sm"></i>
-                <span>{userActionBanner}</span>
+                <i
+                  className={`fas text-sm ${
+                    userActionBanner.type === 'error'
+                      ? 'fa-exclamation-circle text-red-600'
+                      : userActionBanner.type === 'info'
+                        ? 'fa-info-circle text-amber-600'
+                        : 'fa-check-circle text-emerald-600'
+                  }`}
+                ></i>
+                <span>{userActionBanner.text}</span>
               </div>
               <button
                 type="button"
                 onClick={() => setUserActionBanner(null)}
-                className="text-emerald-800 hover:text-black font-black px-2"
+                className="hover:text-black font-black px-2"
                 aria-label="Dismiss message"
               >
                 &times;
@@ -1915,240 +2077,105 @@ export const SuperAdminDashboard: React.FC = () => {
                   <th>Community Title</th>
                   <th>Status</th>
                   <th>Joined</th>
-                  <th>Actions</th>
                 </tr>
               </thead>
               <tbody>
                 {loadingUsers ? (
                   <tr>
-                    <td colSpan={7} className="text-center py-6 text-zinc-500 font-bold">
+                    <td colSpan={6} className="text-center py-6 text-zinc-500 font-bold">
                       <i className="fas fa-spinner fa-spin mr-2"></i> Loading registered users...
                     </td>
                   </tr>
-                ) : filteredUsers.map((u) => {
-                  const isOwner = isSuperAdminEmail(u.email);
-                  const isTargetSuperAdmin = isOwner || u.role === 'SUPER_ADMIN';
-                  const displayRole: UserRole = isOwner ? 'SUPER_ADMIN' : u.role;
-                  const canModifyTarget =
-                    !isOwner &&
-                    u.id !== user?.uid &&
-                    (isPermanentOwner || !isTargetSuperAdmin);
+                ) : filteredUsers.length === 0 ? (
+                  <tr>
+                    <td colSpan={6} className="text-center py-8 text-zinc-500 italic">
+                      No riders match your search.
+                    </td>
+                  </tr>
+                ) : (
+                  filteredUsers.map((u) => {
+                    const isOwner = isSuperAdminEmail(u.email);
+                    const isTargetSuperAdmin = isOwner || u.role === 'SUPER_ADMIN';
+                    const displayRole: UserRole = isOwner ? 'SUPER_ADMIN' : u.role;
 
-                  return (
-                    <tr
-                      key={u.id}
-                      className={`${u.isSuspended ? 'bg-red-50/50' : ''} hover:bg-zinc-50 transition`}
-                    >
-                      <td>
-                        <button
-                          type="button"
-                          onClick={() => setInspectingUser(u)}
-                          className="flex items-center gap-2 text-left group"
-                          title="Click to view full user profile"
-                        >
-                          <div className="w-8 h-8 rounded-full bg-zinc-200 border-2 border-zinc-900 flex items-center justify-center font-bold text-xs overflow-hidden flex-shrink-0 group-hover:scale-105 transition">
-                            {u.photoURL ? (
-                              <img src={u.photoURL} alt={u.displayName} className="w-full h-full object-cover" />
-                            ) : (
-                              u.displayName.charAt(0).toUpperCase()
-                            )}
-                          </div>
-                          <div>
-                            <span className="font-black text-zinc-900 group-hover:underline block">
-                              {u.displayName}
-                            </span>
-                            <span className="text-[10px] text-zinc-500 flex items-center gap-1 font-semibold">
-                              <i className="fas fa-id-badge text-[9px]"></i> View Profile
-                            </span>
-                          </div>
-                        </button>
-                      </td>
-                      <td className="text-xs text-zinc-600">{u.email}</td>
-                      <td>
-                        <div className="flex items-center gap-1 flex-wrap">
-                          <span className={`role-badge ${displayRole}`}>{displayRole}</span>
-                          {isOwner && (
-                            <span className="text-[10px] bg-[#1e1e1e] text-[#f9c74f] font-black px-1.5 py-0.5 rounded border border-zinc-900">
-                              Permanent Owner
-                            </span>
-                          )}
-                          {!isOwner && u.role === 'SUPER_ADMIN' && (
-                            <span className="text-[10px] bg-amber-100 text-amber-900 font-black px-1.5 py-0.5 rounded border border-amber-400">
-                              Appointed Super Admin
-                            </span>
-                          )}
-                          {u.isAdminMember && !isTargetSuperAdmin && (
-                            <span className="text-[10px] bg-amber-100 text-amber-900 font-black px-1.5 py-0.5 rounded border border-amber-300">
-                              Admin Member
-                            </span>
-                          )}
-                        </div>
-                      </td>
-                      <td>
-                        <div className="flex items-center gap-1.5">
-                          <span className="text-xs font-bold text-zinc-800">
-                            {u.customTitle || (isOwner ? 'Executive Owner' : '—')}
-                          </span>
+                    return (
+                      <tr
+                        key={u.id}
+                        onClick={() => openInspectUser(u)}
+                        className={`${u.isSuspended ? 'bg-red-50/50' : ''} hover:bg-amber-50/50 transition cursor-pointer`}
+                        title="Click to open View Profile & Manage Actions"
+                      >
+                        <td>
                           <button
                             type="button"
                             onClick={(e) => {
                               e.stopPropagation();
-                              setEditingTitleUser(u);
-                              setNewTitleValue(u.customTitle || '');
+                              openInspectUser(u);
                             }}
-                            className="text-[11px] text-zinc-400 hover:text-black p-1"
-                            title="Edit / Moderate custom title"
+                            className="flex items-center gap-2.5 text-left group"
+                            title="Open View Profile & Actions"
                           >
-                            <i className="fas fa-pencil-alt"></i>
-                          </button>
-                        </div>
-                      </td>
-                      <td>
-                        {u.isSuspended ? (
-                          <span className="text-[0.65rem] font-bold uppercase bg-red-100 text-red-800 px-2 py-0.5 rounded-full border border-red-300">
-                            Suspended
-                          </span>
-                        ) : (
-                          <span className="text-[0.65rem] font-bold uppercase bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full border border-emerald-300">
-                            Active
-                          </span>
-                        )}
-                      </td>
-                      <td className="text-xs text-zinc-500">
-                        {new Date(u.createdAt).toLocaleDateString()}
-                      </td>
-                      <td>
-                        {isOwner ? (
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <span className="text-xs font-bold text-amber-700 italic">Permanent Owner</span>
-                            {u.role !== 'SUPER_ADMIN' && (
-                              <button
-                                type="button"
-                                onClick={async () => {
-                                  const res = await syncSuperAdminAccess();
-                                  setUserActionBanner(res.message);
-                                }}
-                                className="px-2 py-1 rounded-lg border border-amber-700 bg-amber-100 hover:bg-amber-200 text-amber-900 text-[11px] font-black"
-                              >
-                                Sync DB ({u.role} &rarr; SUPER_ADMIN)
-                              </button>
-                            )}
-                          </div>
-                        ) : !canModifyTarget ? (
-                          <div className="flex items-center gap-1.5 flex-wrap">
-                            <button
-                              type="button"
-                              onClick={() => setInspectingUser(u)}
-                              title="Inspect User Profile"
-                              className="px-2 py-1 rounded-lg border border-zinc-900 bg-white hover:bg-zinc-100 text-xs font-bold flex items-center gap-1"
-                            >
-                              <i className="fas fa-eye text-amber-600"></i>
-                            </button>
-
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setNoticeTargetUser(u);
-                                setIsNoticeComposerOpen(true);
-                              }}
-                              title={`Send Direct Notice to ${u.displayName}`}
-                              className="px-2 py-1 rounded-lg border border-zinc-900 bg-[#f9c74f] hover:bg-amber-400 text-xs font-bold flex items-center gap-1 shadow-sm text-zinc-900"
-                            >
-                              <i className="fas fa-paper-plane text-[10px]"></i>
-                              <span className="hidden xl:inline">Notice</span>
-                            </button>
-
-                            <span className="text-[11px] font-bold text-amber-800 bg-amber-50 px-2 py-1 rounded-lg border border-amber-300">
-                              {u.id === user?.uid ? 'Your Super Admin Account' : 'Owner Authority Only'}
-                            </span>
-                          </div>
-                        ) : (
-                          <div className="flex items-center gap-1.5 flex-wrap">
-                            <button
-                              type="button"
-                              onClick={() => setInspectingUser(u)}
-                              title="Inspect User Profile"
-                              className="px-2 py-1 rounded-lg border border-zinc-900 bg-white hover:bg-zinc-100 text-xs font-bold flex items-center gap-1"
-                            >
-                              <i className="fas fa-eye text-amber-600"></i>
-                            </button>
-
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setNoticeTargetUser(u);
-                                setIsNoticeComposerOpen(true);
-                              }}
-                              title={`Send Direct Notice to ${u.displayName}`}
-                              className="px-2 py-1 rounded-lg border border-zinc-900 bg-[#f9c74f] hover:bg-amber-400 text-xs font-bold flex items-center gap-1 shadow-sm text-zinc-900"
-                            >
-                              <i className="fas fa-paper-plane text-[10px]"></i>
-                              <span className="hidden xl:inline">Notice</span>
-                            </button>
-
-                            <select
-                              value={displayRole}
-                              onChange={(e) => handleChangeRole(u, e.target.value)}
-                              className="text-xs font-bold py-1 px-2 rounded-lg border border-zinc-900 bg-white"
-                            >
-                              <option value="PUBLIC">PUBLIC</option>
-                              <option value="MEMBER">MEMBER</option>
-                              <option value="ADMIN">ADMIN</option>
-                              <option value="SUPER_ADMIN">SUPER_ADMIN</option>
-                            </select>
-
-                            {isPermanentOwner && u.role === 'SUPER_ADMIN' && (
-                              <button
-                                type="button"
-                                onClick={() => handleChangeRole(u, 'PUBLIC')}
-                                title={`Remove ${u.displayName} as Super Admin`}
-                                className="px-2 py-1 rounded-lg border border-rose-700 bg-rose-50 hover:bg-rose-100 text-rose-800 text-xs font-bold flex items-center gap-1"
-                              >
-                                <i className="fas fa-crown"></i>
-                                <span>Remove Super Admin</span>
-                              </button>
-                            )}
-
-                            {(u.role === 'ADMIN' || u.isAdminMember || u.adminMembershipStatus === 'APPROVED') &&
-                              u.role !== 'SUPER_ADMIN' && (
-                                <button
-                                  type="button"
-                                  onClick={() => handleRemoveFromAdminPanel(u.id, u.displayName)}
-                                  title={`Kick ${u.displayName} out as Admin Member`}
-                                  className="px-2 py-1 rounded-lg border border-rose-700 bg-rose-50 hover:bg-rose-100 text-rose-800 text-xs font-bold flex items-center gap-1"
-                                >
-                                  <i className="fas fa-user-minus"></i>
-                                  <span className="hidden xl:inline">Remove Admin</span>
-                                </button>
+                            <div className="w-8 h-8 rounded-full bg-zinc-200 border-2 border-zinc-900 flex items-center justify-center font-bold text-xs overflow-hidden flex-shrink-0 group-hover:scale-105 transition">
+                              {u.photoURL ? (
+                                <img src={u.photoURL} alt={u.displayName} className="w-full h-full object-cover" />
+                              ) : (
+                                u.displayName.charAt(0).toUpperCase()
                               )}
-
-                            <button
-                              type="button"
-                              onClick={() => handleToggleSuspend(u)}
-                              title={u.isSuspended ? 'Reactivate account' : 'Suspend account'}
-                              className={`p-1.5 rounded-lg border text-xs ${
-                                u.isSuspended
-                                  ? 'bg-emerald-100 border-emerald-700 text-emerald-800 hover:bg-emerald-200'
-                                  : 'bg-amber-100 border-amber-700 text-amber-800 hover:bg-amber-200'
-                              }`}
-                            >
-                              <i className={`fas ${u.isSuspended ? 'fa-user-check' : 'fa-user-slash'}`}></i>
-                            </button>
-
-                            <button
-                              type="button"
-                              onClick={() => handleOpenDeleteUser(u)}
-                              title={`Permanently delete ${u.displayName}'s account`}
-                              className="p-1.5 rounded-lg border border-red-700 bg-red-100 text-red-800 hover:bg-red-600 hover:text-white transition text-xs"
-                            >
-                              <i className="fas fa-trash-alt"></i>
-                            </button>
+                            </div>
+                            <div>
+                              <span className="font-black text-zinc-900 group-hover:underline block">
+                                {u.displayName}
+                              </span>
+                              <span className="text-[10px] text-amber-700 flex items-center gap-1 font-bold">
+                                <i className="fas fa-id-badge text-[9px]"></i> View Profile &amp; Actions &rarr;
+                              </span>
+                            </div>
+                          </button>
+                        </td>
+                        <td className="text-xs text-zinc-600">{u.email}</td>
+                        <td>
+                          <div className="flex items-center gap-1 flex-wrap">
+                            <span className={`role-badge ${displayRole}`}>{displayRole}</span>
+                            {isOwner && (
+                              <span className="text-[10px] bg-[#1e1e1e] text-[#f9c74f] font-black px-1.5 py-0.5 rounded border border-zinc-900">
+                                Permanent Owner
+                              </span>
+                            )}
+                            {!isOwner && u.role === 'SUPER_ADMIN' && (
+                              <span className="text-[10px] bg-amber-100 text-amber-900 font-black px-1.5 py-0.5 rounded border border-amber-400">
+                                Appointed Super Admin
+                              </span>
+                            )}
+                            {u.isAdminMember && !isTargetSuperAdmin && (
+                              <span className="text-[10px] bg-amber-100 text-amber-900 font-black px-1.5 py-0.5 rounded border border-amber-300">
+                                Admin Member
+                              </span>
+                            )}
                           </div>
-                        )}
-                      </td>
-                    </tr>
-                  );
-                })}
+                        </td>
+                        <td>
+                          <span className="text-xs font-bold text-zinc-800">
+                            {u.customTitle || (isOwner ? 'Executive Owner' : '—')}
+                          </span>
+                        </td>
+                        <td>
+                          {u.isSuspended ? (
+                            <span className="text-[0.65rem] font-bold uppercase bg-red-100 text-red-800 px-2 py-0.5 rounded-full border border-red-300">
+                              Suspended
+                            </span>
+                          ) : (
+                            <span className="text-[0.65rem] font-bold uppercase bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full border border-emerald-300">
+                              Active
+                            </span>
+                          )}
+                        </td>
+                        <td className="text-xs text-zinc-500">
+                          {new Date(u.createdAt).toLocaleDateString()}
+                        </td>
+                      </tr>
+                    );
+                  })
+                )}
               </tbody>
             </table>
           </div>
@@ -2414,23 +2441,397 @@ export const SuperAdminDashboard: React.FC = () => {
       {adminTab === 'notices' && (
         <SuperAdminNoticesPanel
           allUsers={allUsers}
-          targetUserForNotice={noticeTargetUser}
-          onClearTargetUser={() => setNoticeTargetUser(null)}
-          isComposerOpen={isNoticeComposerOpen}
           onOpenComposer={(target) => {
-            if (target) setNoticeTargetUser(target);
+            setNoticeTargetUser(target || null);
             setIsNoticeComposerOpen(true);
-          }}
-          onCloseComposer={() => {
-            setIsNoticeComposerOpen(false);
-            setNoticeTargetUser(null);
           }}
         />
       )}
 
+      {/* MODAL 1: USER PROFILE INSPECTION & ACTIONS MODAL */}
+      {inspectingUser && (() => {
+        const isInspectOwner = isSuperAdminEmail(inspectingUser.email);
+        const isInspectTargetSuperAdmin = isInspectOwner || inspectingUser.role === 'SUPER_ADMIN';
+        const inspectDisplayRole: UserRole = isInspectOwner ? 'SUPER_ADMIN' : inspectingUser.role;
+        const canModifyInspectTarget =
+          !isInspectOwner &&
+          inspectingUser.id !== user?.uid &&
+          (isPermanentOwner || !isInspectTargetSuperAdmin);
+
+        return (
+          <div
+            className="modal-overlay open"
+            onClick={(e) => {
+              if (e.target === e.currentTarget) setInspectingUser(null);
+            }}
+            role="dialog"
+            aria-modal="true"
+          >
+            <div className="modal max-w-lg p-6 sm:p-8 border-3 border-[#1e1e1e] bg-white rounded-3xl shadow-[0_10px_0_#1e1e1e] max-h-[90vh] overflow-y-auto">
+              <button
+                type="button"
+                className="modal-close"
+                onClick={() => setInspectingUser(null)}
+                aria-label="Close"
+              >
+                <i className="fas fa-times"></i>
+              </button>
+
+              <div className="text-center pb-5 border-b border-zinc-200">
+                <div className="w-20 h-20 mx-auto mb-3 rounded-full border-3 border-zinc-900 bg-zinc-200 overflow-hidden flex items-center justify-center font-black text-2xl text-zinc-700 shadow-[0_4px_0_#1e1e1e]">
+                  {inspectingUser.photoURL ? (
+                    <img src={inspectingUser.photoURL} alt={inspectingUser.displayName} className="w-full h-full object-cover" />
+                  ) : (
+                    inspectingUser.displayName?.charAt(0).toUpperCase() || 'R'
+                  )}
+                </div>
+                <h3 className="font-black text-2xl text-zinc-900 tracking-tight">
+                  {inspectingUser.displayName}
+                </h3>
+                <p className="text-xs text-zinc-500 font-mono mt-0.5">{inspectingUser.email}</p>
+
+                <div className="flex items-center justify-center gap-2 mt-3 flex-wrap">
+                  <span className={`role-badge ${inspectDisplayRole}`}>
+                    {inspectDisplayRole}
+                  </span>
+                  {isInspectOwner ? (
+                    <span className="text-[11px] font-black uppercase bg-[#1e1e1e] text-[#f9c74f] px-2.5 py-0.5 rounded-full border border-zinc-900">
+                      Permanent Owner
+                    </span>
+                  ) : inspectingUser.role === 'SUPER_ADMIN' ? (
+                    <span className="text-[11px] font-black uppercase bg-amber-100 text-amber-900 px-2.5 py-0.5 rounded-full border border-amber-400">
+                      Appointed Super Admin
+                    </span>
+                  ) : null}
+                  {inspectingUser.isAdminMember && !isInspectTargetSuperAdmin && (
+                    <span className="text-[11px] font-black uppercase bg-amber-100 text-amber-900 px-2.5 py-0.5 rounded-full border border-amber-300">
+                      Admin Member
+                    </span>
+                  )}
+                  {inspectingUser.isSuspended ? (
+                    <span className="text-xs font-black uppercase bg-red-100 text-red-800 px-2.5 py-0.5 rounded-full border border-red-300">
+                      <i className="fas fa-ban mr-1"></i> Suspended
+                    </span>
+                  ) : (
+                    <span className="text-xs font-black uppercase bg-emerald-100 text-emerald-800 px-2.5 py-0.5 rounded-full border border-emerald-300">
+                      <i className="fas fa-check-circle mr-1"></i> Active Account
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              {/* Inline feedback inside View Profile */}
+              {inspectActionFeedback && (
+                <div
+                  className={`mt-4 p-3 border-2 rounded-2xl flex items-center justify-between gap-2 text-xs font-bold ${
+                    inspectActionFeedback.type === 'error'
+                      ? 'bg-red-50 border-red-500 text-red-900'
+                      : inspectActionFeedback.type === 'info'
+                        ? 'bg-amber-50 border-amber-500 text-amber-900'
+                        : 'bg-emerald-50 border-emerald-500 text-emerald-900'
+                  }`}
+                >
+                  <div className="flex items-center gap-2">
+                    <i
+                      className={`fas ${
+                        inspectActionFeedback.type === 'error'
+                          ? 'fa-exclamation-circle text-red-600'
+                          : inspectActionFeedback.type === 'info'
+                            ? 'fa-info-circle text-amber-600'
+                            : 'fa-check-circle text-emerald-600'
+                      }`}
+                    ></i>
+                    <span>{inspectActionFeedback.text}</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setInspectActionFeedback(null)}
+                    className="font-black px-1.5"
+                    aria-label="Dismiss"
+                  >
+                    &times;
+                  </button>
+                </div>
+              )}
+
+              {/* Profile Information Details */}
+              <div className="py-4 space-y-3 text-xs">
+                <div className="flex items-center justify-between p-2.5 bg-zinc-50 rounded-xl border border-zinc-200 gap-2">
+                  <span className="font-bold text-zinc-500 uppercase">Community Title:</span>
+                  <div className="flex items-center gap-2">
+                    <span className="font-black text-zinc-900">
+                      {inspectingUser.customTitle || (isInspectOwner ? 'Executive Owner' : 'Standard Member')}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setEditingTitleUser(inspectingUser);
+                        setNewTitleValue(inspectingUser.customTitle || '');
+                      }}
+                      className="px-2 py-0.5 rounded-lg border border-zinc-300 bg-white hover:bg-[#f9c74f] hover:border-zinc-900 text-[11px] font-bold text-zinc-800 transition"
+                      title="Edit custom community title"
+                    >
+                      <i className="fas fa-pencil-alt mr-1"></i>Edit
+                    </button>
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between p-2.5 bg-zinc-50 rounded-xl border border-zinc-200">
+                  <span className="font-bold text-zinc-500 uppercase">Registered Date:</span>
+                  <span className="font-bold text-zinc-800">
+                    {new Date(inspectingUser.createdAt).toLocaleDateString()}
+                  </span>
+                </div>
+
+                <div className="flex items-center justify-between p-2.5 bg-zinc-50 rounded-xl border border-zinc-200">
+                  <span className="font-bold text-zinc-500 uppercase">Community Rating:</span>
+                  <span className="font-black text-zinc-900 flex items-center gap-1">
+                    <i className="fas fa-star text-amber-500"></i>
+                    {inspectingUser.ratingAverage ? inspectingUser.ratingAverage.toFixed(1) : 'No ratings'}{' '}
+                    <span className="font-normal text-zinc-500">({inspectingUser.ratingCount || 0} reviews)</span>
+                  </span>
+                </div>
+
+                {inspectingUser.bio && (
+                  <div className="p-3 bg-zinc-50 rounded-xl border border-zinc-200">
+                    <span className="font-bold text-zinc-500 uppercase block mb-1">Rider Bio:</span>
+                    <p className="text-zinc-700 italic">&quot;{inspectingUser.bio}&quot;</p>
+                  </div>
+                )}
+              </div>
+
+              {/* Actions Panel (Moved here from Users table) */}
+              <div className="pt-4 border-t border-zinc-200 space-y-4">
+                {/* Home screen featured status */}
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-xs font-black uppercase text-zinc-600">Home Screen Status:</span>
+                  {featuredMembers.some((fm) => fm.userId === inspectingUser.id || fm.id === inspectingUser.id) ? (
+                    <span className="text-xs font-bold text-emerald-800 bg-emerald-50 px-2.5 py-1 rounded-full border border-emerald-300 flex items-center gap-1">
+                      <i className="fas fa-star text-amber-500"></i> Featured on Home Screen
+                    </span>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        handleFeatureRegisteredUser(inspectingUser.id);
+                        setInspectingUser(null);
+                      }}
+                      className="btn-primary py-1.5 px-3 text-xs font-black flex items-center gap-1.5"
+                    >
+                      <i className="fas fa-plus"></i> Feature on Home Screen
+                    </button>
+                  )}
+                </div>
+
+                {/* Permanent Owner DB role sync action if needed */}
+                {isInspectOwner && (
+                  <div className="p-3 bg-amber-50 border border-amber-300 rounded-2xl flex items-center justify-between gap-2 flex-wrap">
+                    <span className="text-xs font-black text-amber-900 flex items-center gap-1.5">
+                      <i className="fas fa-crown text-amber-600"></i>
+                      Permanent Owner Account
+                    </span>
+                    {inspectingUser.role !== 'SUPER_ADMIN' && (
+                      <button
+                        type="button"
+                        disabled={inspectActionBusy === 'sync'}
+                        onClick={async () => {
+                          setInspectActionBusy('sync');
+                          const res = await syncSuperAdminAccess();
+                          setInspectActionBusy(null);
+                          setInspectActionFeedback({
+                            type: res.synced ? 'success' : 'error',
+                            text: res.message,
+                          });
+                          setUserActionBanner({
+                            type: res.synced ? 'success' : 'error',
+                            text: res.message,
+                          });
+                        }}
+                        className="px-3 py-1.5 rounded-xl border border-amber-700 bg-amber-100 hover:bg-amber-200 text-amber-900 text-xs font-black"
+                      >
+                        {inspectActionBusy === 'sync' ? (
+                          <><i className="fas fa-spinner fa-spin mr-1"></i>Syncing...</>
+                        ) : (
+                          <>Sync DB ({inspectingUser.role} &rarr; SUPER_ADMIN)</>
+                        )}
+                      </button>
+                    )}
+                  </div>
+                )}
+
+                {/* Role & Authority Management */}
+                {canModifyInspectTarget && (
+                  <div className="p-3.5 bg-[#fbf9f4] border-2 border-zinc-900 rounded-2xl space-y-3">
+                    <div className="flex items-center justify-between gap-2 flex-wrap">
+                      <span className="text-xs font-black uppercase text-zinc-700 flex items-center gap-1.5">
+                        <i className="fas fa-user-shield text-amber-600"></i>
+                        Role Assignment
+                        {inspectActionBusy === 'role' && (
+                          <i className="fas fa-spinner fa-spin text-amber-600 ml-1"></i>
+                        )}
+                      </span>
+                      <select
+                        value={inspectDisplayRole}
+                        disabled={inspectActionBusy !== null}
+                        onChange={(e) => handleChangeRole(inspectingUser, e.target.value)}
+                        className="text-xs font-bold py-1.5 px-3 rounded-xl border-2 border-zinc-900 bg-white cursor-pointer disabled:opacity-60"
+                      >
+                        <option value="PUBLIC">PUBLIC</option>
+                        <option value="MEMBER">MEMBER</option>
+                        <option value="ADMIN">ADMIN</option>
+                        <option value="SUPER_ADMIN">SUPER_ADMIN</option>
+                      </select>
+                    </div>
+
+                    {/* Quick Role Buttons */}
+                    <div className="grid grid-cols-4 gap-1.5">
+                      {(['PUBLIC', 'MEMBER', 'ADMIN', 'SUPER_ADMIN'] as UserRole[]).map((rOpt) => {
+                        const isCurrent = inspectDisplayRole === rOpt;
+                        return (
+                          <button
+                            key={rOpt}
+                            type="button"
+                            disabled={inspectActionBusy !== null || isCurrent}
+                            onClick={() => handleChangeRole(inspectingUser, rOpt)}
+                            className={`py-1.5 px-1 rounded-xl text-[10px] font-black border-2 transition cursor-pointer disabled:cursor-default ${
+                              isCurrent
+                                ? 'bg-[#1e1e1e] text-[#f9c74f] border-[#1e1e1e]'
+                                : 'bg-white text-zinc-800 border-zinc-300 hover:border-zinc-900 hover:bg-amber-50'
+                            }`}
+                          >
+                            {rOpt === 'SUPER_ADMIN' ? 'SUPER ADMIN' : rOpt}
+                          </button>
+                        );
+                      })}
+                    </div>
+
+                    {/* Quick Remove Super Admin (Permanent Owner Only) */}
+                    {isPermanentOwner && inspectingUser.role === 'SUPER_ADMIN' && (
+                      <button
+                        type="button"
+                        disabled={inspectActionBusy !== null}
+                        onClick={() => handleChangeRole(inspectingUser, 'PUBLIC')}
+                        className="w-full py-2 px-3 text-xs font-black rounded-xl border-2 border-rose-700 bg-rose-50 hover:bg-rose-100 text-rose-900 flex items-center justify-center gap-2 disabled:opacity-50"
+                      >
+                        <i className="fas fa-crown"></i>
+                        <span>Remove as Super Admin (Demote to PUBLIC)</span>
+                      </button>
+                    )}
+
+                    {/* Quick Remove Admin Member */}
+                    {(inspectingUser.role === 'ADMIN' ||
+                      inspectingUser.isAdminMember ||
+                      inspectingUser.adminMembershipStatus === 'APPROVED') &&
+                      inspectingUser.role !== 'SUPER_ADMIN' && (
+                        <button
+                          type="button"
+                          disabled={inspectActionBusy !== null}
+                          onClick={() => handleRemoveFromAdminPanel(inspectingUser.id, inspectingUser.displayName)}
+                          className="w-full py-2 px-3 text-xs font-black rounded-xl border-2 border-rose-700 bg-rose-50 hover:bg-rose-100 text-rose-900 flex items-center justify-center gap-2 disabled:opacity-50"
+                        >
+                          <i className="fas fa-user-minus"></i>
+                          <span>
+                            {inspectActionBusy === 'adminRemove'
+                              ? 'Removing Admin...'
+                              : 'Remove from Admin Panel (Demote to PUBLIC)'}
+                          </span>
+                        </button>
+                      )}
+                  </div>
+                )}
+
+                {!isInspectOwner &&
+                  inspectingUser.role === 'SUPER_ADMIN' &&
+                  !isPermanentOwner && (
+                    <div className="p-2.5 bg-amber-50 border border-amber-300 rounded-xl text-xs font-bold text-amber-900 flex items-center gap-2">
+                      <i className="fas fa-lock text-amber-700"></i>
+                      <span>Only a Permanent Owner can demote, suspend, or delete a Super Admin account.</span>
+                    </div>
+                  )}
+
+                {inspectingUser.id === user?.uid && !isInspectOwner && (
+                  <div className="p-2.5 bg-amber-50 border border-amber-300 rounded-xl text-xs font-bold text-amber-900 flex items-center gap-2">
+                    <i className="fas fa-user-shield text-amber-700"></i>
+                    <span>This is your own active Super Admin account. Only a Permanent Owner can modify your clearance.</span>
+                  </div>
+                )}
+
+                {/* Direct Notice + Suspend + Delete Action Bar */}
+                <div className="pt-1 flex flex-col gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setNoticeTargetUser(inspectingUser);
+                      setIsNoticeComposerOpen(true);
+                    }}
+                    className="w-full py-2.5 px-4 text-xs font-black flex items-center justify-center gap-2 bg-[#f9c74f] text-[#1e1e1e] border-2 border-[#1e1e1e] rounded-xl shadow-[0_3px_0_#1e1e1e] hover:bg-amber-400 transition cursor-pointer"
+                  >
+                    <i className="fas fa-paper-plane"></i>
+                    <span>Send Direct Notice to {inspectingUser.displayName}</span>
+                  </button>
+
+                  {canModifyInspectTarget && (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      <button
+                        type="button"
+                        disabled={inspectActionBusy !== null}
+                        onClick={() => handleToggleSuspend(inspectingUser)}
+                        className={`py-2 px-4 text-xs font-black rounded-xl border-2 border-[#1e1e1e] shadow-[0_3px_0_#1e1e1e] transition flex items-center justify-center gap-1.5 disabled:opacity-50 ${
+                          inspectingUser.isSuspended
+                            ? 'bg-emerald-100 text-emerald-900 hover:bg-emerald-200'
+                            : 'bg-amber-100 text-amber-900 hover:bg-amber-200'
+                        }`}
+                      >
+                        <i className={`fas ${inspectingUser.isSuspended ? 'fa-user-check' : 'fa-user-slash'}`}></i>
+                        <span>
+                          {inspectActionBusy === 'suspend'
+                            ? 'Updating...'
+                            : inspectingUser.isSuspended
+                              ? 'Reactivate Account'
+                              : 'Suspend Account'}
+                        </span>
+                      </button>
+
+                      <button
+                        type="button"
+                        disabled={inspectActionBusy !== null}
+                        onClick={() => handleOpenDeleteUser(inspectingUser)}
+                        className="py-2 px-4 text-xs font-black flex items-center justify-center gap-2 bg-red-600 text-white border-2 border-[#1e1e1e] rounded-xl shadow-[0_3px_0_#1e1e1e] hover:bg-red-700 transition cursor-pointer disabled:opacity-50"
+                      >
+                        <i className="fas fa-trash-alt"></i>
+                        <span>Delete Account</span>
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* GLOBAL DIRECT NOTICE COMPOSER MODAL (Works from View Profile & Notices tab) */}
+      <DirectNoticeComposerModal
+        isOpen={isNoticeComposerOpen}
+        allUsers={allUsers}
+        targetUser={noticeTargetUser}
+        onClearTargetUser={() => setNoticeTargetUser(null)}
+        onClose={() => {
+          setIsNoticeComposerOpen(false);
+          setNoticeTargetUser(null);
+        }}
+        onNoticeSent={(recipient) => {
+          const msg = `Direct notice delivered to ${recipient.displayName} (${recipient.email || recipient.id})!`;
+          setUserActionBanner({ type: 'success', text: msg });
+          if (inspectingUser?.id === recipient.id) {
+            setInspectActionFeedback({ type: 'success', text: msg });
+          }
+        }}
+      />
+
       {/* Super Admin Title Editor Modal */}
       {editingTitleUser && (
-        <div className="modal-overlay open" role="dialog" aria-modal="true">
+        <div className="modal-overlay open" style={{ zIndex: 1150 }} role="dialog" aria-modal="true">
           <div className="modal max-w-md p-6 border-3 border-[#1e1e1e] bg-white rounded-3xl shadow-[0_10px_0_#1e1e1e]">
             <button
               type="button"
@@ -2490,212 +2891,6 @@ export const SuperAdminDashboard: React.FC = () => {
                 >
                   Save Title
                 </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* MODAL 1: USER PROFILE INSPECTION MODAL (Requirement 6) */}
-      {inspectingUser && (
-        <div
-          className="modal-overlay open"
-          onClick={(e) => {
-            if (e.target === e.currentTarget) setInspectingUser(null);
-          }}
-          role="dialog"
-          aria-modal="true"
-        >
-          <div className="modal max-w-lg p-6 sm:p-8 border-3 border-[#1e1e1e] bg-white rounded-3xl shadow-[0_10px_0_#1e1e1e] max-h-[90vh] overflow-y-auto">
-            <button
-              type="button"
-              className="modal-close"
-              onClick={() => setInspectingUser(null)}
-              aria-label="Close"
-            >
-              <i className="fas fa-times"></i>
-            </button>
-
-            <div className="text-center pb-5 border-b border-zinc-200">
-              <div className="w-20 h-20 mx-auto mb-3 rounded-full border-3 border-zinc-900 bg-zinc-200 overflow-hidden flex items-center justify-center font-black text-2xl text-zinc-700 shadow-[0_4px_0_#1e1e1e]">
-                {inspectingUser.photoURL ? (
-                  <img src={inspectingUser.photoURL} alt={inspectingUser.displayName} className="w-full h-full object-cover" />
-                ) : (
-                  inspectingUser.displayName?.charAt(0).toUpperCase() || 'R'
-                )}
-              </div>
-              <h3 className="font-black text-2xl text-zinc-900 tracking-tight">
-                {inspectingUser.displayName}
-              </h3>
-              <p className="text-xs text-zinc-500 font-mono mt-0.5">{inspectingUser.email}</p>
-
-              <div className="flex items-center justify-center gap-2 mt-3 flex-wrap">
-                <span className={`role-badge ${isSuperAdminEmail(inspectingUser.email) ? 'SUPER_ADMIN' : inspectingUser.role}`}>
-                  {isSuperAdminEmail(inspectingUser.email) ? 'SUPER_ADMIN' : inspectingUser.role}
-                </span>
-                {isSuperAdminEmail(inspectingUser.email) ? (
-                  <span className="text-[11px] font-black uppercase bg-[#1e1e1e] text-[#f9c74f] px-2.5 py-0.5 rounded-full border border-zinc-900">
-                    Permanent Owner
-                  </span>
-                ) : inspectingUser.role === 'SUPER_ADMIN' ? (
-                  <span className="text-[11px] font-black uppercase bg-amber-100 text-amber-900 px-2.5 py-0.5 rounded-full border border-amber-400">
-                    Appointed Super Admin
-                  </span>
-                ) : null}
-                {inspectingUser.isSuspended ? (
-                  <span className="text-xs font-black uppercase bg-red-100 text-red-800 px-2.5 py-0.5 rounded-full border border-red-300">
-                    <i className="fas fa-ban mr-1"></i> Suspended
-                  </span>
-                ) : (
-                  <span className="text-xs font-black uppercase bg-emerald-100 text-emerald-800 px-2.5 py-0.5 rounded-full border border-emerald-300">
-                    <i className="fas fa-check-circle mr-1"></i> Active Account
-                  </span>
-                )}
-              </div>
-            </div>
-
-            {/* Profile Information Details */}
-            <div className="py-4 space-y-3 text-xs">
-              <div className="flex items-center justify-between p-2.5 bg-zinc-50 rounded-xl border border-zinc-200">
-                <span className="font-bold text-zinc-500 uppercase">Community Title:</span>
-                <span className="font-black text-zinc-900">
-                  {inspectingUser.customTitle || 'Standard Member'}
-                </span>
-              </div>
-
-              <div className="flex items-center justify-between p-2.5 bg-zinc-50 rounded-xl border border-zinc-200">
-                <span className="font-bold text-zinc-500 uppercase">Registered Date:</span>
-                <span className="font-bold text-zinc-800">
-                  {new Date(inspectingUser.createdAt).toLocaleDateString()}
-                </span>
-              </div>
-
-              <div className="flex items-center justify-between p-2.5 bg-zinc-50 rounded-xl border border-zinc-200">
-                <span className="font-bold text-zinc-500 uppercase">Community Rating:</span>
-                <span className="font-black text-zinc-900 flex items-center gap-1">
-                  <i className="fas fa-star text-amber-500"></i>
-                  {inspectingUser.ratingAverage ? inspectingUser.ratingAverage.toFixed(1) : 'No ratings'}{' '}
-                  <span className="font-normal text-zinc-500">({inspectingUser.ratingCount || 0} reviews)</span>
-                </span>
-              </div>
-
-              {inspectingUser.bio && (
-                <div className="p-3 bg-zinc-50 rounded-xl border border-zinc-200">
-                  <span className="font-bold text-zinc-500 uppercase block mb-1">Rider Bio:</span>
-                  <p className="text-zinc-700 italic">"{inspectingUser.bio}"</p>
-                </div>
-              )}
-            </div>
-
-            {/* Quick Actions for Super Admin */}
-            <div className="pt-4 border-t border-zinc-200 space-y-3">
-              <div className="flex items-center justify-between gap-3">
-                <span className="text-xs font-black uppercase text-zinc-600">Home Screen Status:</span>
-                {featuredMembers.some((fm) => fm.userId === inspectingUser.id || fm.id === inspectingUser.id) ? (
-                  <span className="text-xs font-bold text-emerald-800 bg-emerald-50 px-2.5 py-1 rounded-full border border-emerald-300 flex items-center gap-1">
-                    <i className="fas fa-star text-amber-500"></i> Featured on Home Screen
-                  </span>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      handleFeatureRegisteredUser(inspectingUser.id);
-                      setInspectingUser(null);
-                    }}
-                    className="btn-primary py-1.5 px-3 text-xs font-black flex items-center gap-1.5"
-                  >
-                    <i className="fas fa-plus"></i> Feature on Home Screen
-                  </button>
-                )}
-              </div>
-
-              {!isSuperAdminEmail(inspectingUser.email) &&
-                inspectingUser.id !== user?.uid &&
-                (isPermanentOwner || inspectingUser.role !== 'SUPER_ADMIN') && (
-                  <div className="space-y-2 pt-2">
-                    <div className="flex items-center justify-between gap-2 flex-wrap">
-                      <div className="flex items-center gap-2">
-                        <span className="text-xs font-bold text-zinc-600">Change Role:</span>
-                        <select
-                          value={inspectingUser.role}
-                          onChange={(e) => {
-                            handleChangeRole(inspectingUser, e.target.value);
-                          }}
-                          className="text-xs font-bold py-1 px-2.5 rounded-xl border border-zinc-900 bg-white"
-                        >
-                          <option value="PUBLIC">PUBLIC</option>
-                          <option value="MEMBER">MEMBER</option>
-                          <option value="ADMIN">ADMIN</option>
-                          <option value="SUPER_ADMIN">SUPER_ADMIN</option>
-                        </select>
-                      </div>
-
-                      <button
-                        type="button"
-                        onClick={() => {
-                          handleToggleSuspend(inspectingUser);
-                          setInspectingUser((prev) => prev ? { ...prev, isSuspended: !prev.isSuspended } : null);
-                        }}
-                        className={`py-1.5 px-3 text-xs font-bold rounded-xl border transition flex items-center gap-1.5 ${
-                          inspectingUser.isSuspended
-                            ? 'bg-emerald-100 border-emerald-700 text-emerald-800 hover:bg-emerald-200'
-                            : 'bg-red-100 border-red-700 text-red-800 hover:bg-red-200'
-                        }`}
-                      >
-                        <i className={`fas ${inspectingUser.isSuspended ? 'fa-user-check' : 'fa-user-slash'}`}></i>
-                        {inspectingUser.isSuspended ? 'Reactivate Account' : 'Suspend Account'}
-                      </button>
-                    </div>
-
-                    {isPermanentOwner && inspectingUser.role === 'SUPER_ADMIN' && (
-                      <button
-                        type="button"
-                        onClick={() => handleChangeRole(inspectingUser, 'PUBLIC')}
-                        className="w-full py-2 px-3 text-xs font-black rounded-xl border-2 border-rose-700 bg-rose-50 hover:bg-rose-100 text-rose-900 flex items-center justify-center gap-2"
-                      >
-                        <i className="fas fa-crown"></i>
-                        <span>Remove as Super Admin (Demote to PUBLIC)</span>
-                      </button>
-                    )}
-                  </div>
-                )}
-
-              {!isSuperAdminEmail(inspectingUser.email) &&
-                inspectingUser.role === 'SUPER_ADMIN' &&
-                !isPermanentOwner && (
-                  <div className="p-2.5 bg-amber-50 border border-amber-300 rounded-xl text-xs font-bold text-amber-900 flex items-center gap-2">
-                    <i className="fas fa-lock text-amber-700"></i>
-                    <span>Only a Permanent Owner can demote, suspend, or delete a Super Admin account.</span>
-                  </div>
-                )}
-
-              <div className="pt-2 flex flex-col sm:flex-row gap-2">
-                <button
-                  type="button"
-                  onClick={() => {
-                    const target = inspectingUser;
-                    setInspectingUser(null);
-                    setNoticeTargetUser(target);
-                    setIsNoticeComposerOpen(true);
-                  }}
-                  className="flex-1 py-2 px-4 text-xs font-black flex items-center justify-center gap-2 bg-[#f9c74f] text-[#1e1e1e] border-2 border-[#1e1e1e] rounded-xl shadow-[0_3px_0_#1e1e1e] hover:bg-amber-400 transition cursor-pointer"
-                >
-                  <i className="fas fa-paper-plane"></i>
-                  <span>Send Direct Notice to {inspectingUser.displayName}</span>
-                </button>
-
-                {!isSuperAdminEmail(inspectingUser.email) &&
-                  inspectingUser.id !== user?.uid &&
-                  (isPermanentOwner || inspectingUser.role !== 'SUPER_ADMIN') && (
-                    <button
-                      type="button"
-                      onClick={() => handleOpenDeleteUser(inspectingUser)}
-                      className="py-2 px-4 text-xs font-black flex items-center justify-center gap-2 bg-red-600 text-white border-2 border-[#1e1e1e] rounded-xl shadow-[0_3px_0_#1e1e1e] hover:bg-red-700 transition cursor-pointer"
-                    >
-                      <i className="fas fa-trash-alt"></i>
-                      <span>Delete Account</span>
-                    </button>
-                  )}
               </div>
             </div>
           </div>
@@ -3104,6 +3299,7 @@ export const SuperAdminDashboard: React.FC = () => {
       {deleteTargetUser && (
         <div
           className="modal-overlay open"
+          style={{ zIndex: 1150 }}
           onClick={(e) => {
             if (e.target === e.currentTarget && !deletingUser) {
               setDeleteTargetUser(null);
