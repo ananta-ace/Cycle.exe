@@ -55,6 +55,8 @@ interface AuthContextType {
   updateProfileDetails: (name: string, bio: string, photoURL?: string, customTitle?: string) => Promise<void>;
   dismissWelcomeModal: (roleToken: string) => Promise<void>;
   resendVerificationEmail: () => Promise<void>;
+  accountNotice: string | null;
+  clearAccountNotice: () => void;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -64,6 +66,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const [unreadNotificationsCount, setUnreadNotificationsCount] = useState(0);
+  const [accountNotice, setAccountNotice] = useState<string | null>(null);
 
   // Listen for unread notifications
   useEffect(() => {
@@ -195,12 +198,26 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           console.error('Error fetching/creating user profile:', err);
         }
 
+        let profileExisted = Boolean(userRef);
+        try {
+          const checkSnap = await getDoc(userRef);
+          profileExisted = checkSnap.exists();
+        } catch {
+          profileExisted = false;
+        }
+
         unsubProfile = onSnapshot(
           userRef,
           (snap) => {
             if (snap.exists()) {
+              profileExisted = true;
               const data = snap.data() as UserProfile;
               setProfile(data);
+            } else if (profileExisted) {
+              profileExisted = false;
+              setProfile(null);
+              setAccountNotice('Your Cycle.exe account was deleted by the Super Admin.');
+              signOut(auth).catch(() => {});
             }
           },
           (err) => {
@@ -495,6 +512,8 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         updateProfileDetails,
         dismissWelcomeModal,
         resendVerificationEmail,
+        accountNotice,
+        clearAccountNotice: () => setAccountNotice(null),
       }}
     >
       {children}

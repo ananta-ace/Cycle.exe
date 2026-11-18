@@ -678,6 +678,46 @@ app.post('/api/admin/roles', (req: Request, res: Response) => {
   });
 });
 
+// 9.5 Delete User Account Audit & Session Purge (SUPER ADMIN ONLY)
+app.post('/api/admin/delete-user', (req: Request, res: Response) => {
+  const { uid, email, role } = getAuthFromReq(req);
+  const { targetUserId, targetUserEmail, targetUserName } = req.body;
+
+  const isOwner = checkIsOwner(uid, email, role);
+
+  if (!isOwner) {
+    return res.status(403).json({
+      error: 'Forbidden: Only the Super Admin can delete user accounts',
+    });
+  }
+
+  if (!targetUserId || typeof targetUserId !== 'string') {
+    return res.status(400).json({ error: 'Target user ID is required' });
+  }
+
+  if (targetUserId === uid || isSuperAdminEmail(targetUserEmail)) {
+    return res.status(400).json({ error: 'Super Admin accounts cannot be deleted' });
+  }
+
+  // Terminate any active heartbeat session for the deleted user
+  activeSessions.delete(targetUserId);
+
+  addAuditLog(
+    uid,
+    email,
+    'DELETE_USER_ACCOUNT',
+    'USER',
+    targetUserId,
+    `Permanently deleted account for ${targetUserName || targetUserEmail || targetUserId} (${targetUserEmail || 'no email'})`
+  );
+
+  return res.json({
+    success: true,
+    deletedUserId: targetUserId,
+    message: 'User account deletion recorded and active session terminated',
+  });
+});
+
 // 10. Send Direct Custom Notice to User (SUPER ADMIN ONLY)
 app.post('/api/admin/send-notice', async (req: Request, res: Response) => {
   const { uid, email, role } = getAuthFromReq(req);

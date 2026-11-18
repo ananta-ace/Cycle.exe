@@ -4,13 +4,15 @@ import {
   onSnapshot,
   query,
   orderBy,
+  where,
+  getDocs,
   updateDoc,
   setDoc,
   deleteDoc,
   addDoc,
   doc,
 } from 'firebase/firestore';
-import { db } from '../firebase';
+import { db, handleFirestoreError, OperationType } from '../firebase';
 import { useAuth, isSuperAdminEmail } from '../context/AuthContext';
 import {
   UserProfile,
@@ -36,6 +38,13 @@ export const SuperAdminDashboard: React.FC = () => {
 
   // User Profile Inspection Modal (Requirement 6)
   const [inspectingUser, setInspectingUser] = useState<UserProfile | null>(null);
+
+  // Super Admin Account Deletion Modal State
+  const [deleteTargetUser, setDeleteTargetUser] = useState<UserProfile | null>(null);
+  const [deleteUserPosts, setDeleteUserPosts] = useState(true);
+  const [deletingUser, setDeletingUser] = useState(false);
+  const [deleteUserError, setDeleteUserError] = useState<string | null>(null);
+  const [userActionBanner, setUserActionBanner] = useState<string | null>(null);
 
   // Home Screen Featured Members (Requirement 5)
   const [featuredMembers, setFeaturedMembers] = useState<Member[]>([]);
@@ -840,6 +849,218 @@ export const SuperAdminDashboard: React.FC = () => {
     }
   };
 
+  // Open delete confirmation modal
+  const handleOpenDeleteUser = (targetUser: UserProfile) => {
+    if (isSuperAdminEmail(targetUser.email) || targetUser.id === user?.uid) {
+      setUserActionBanner('Protected Super Admin owner accounts cannot be deleted.');
+      return;
+    }
+    setDeleteUserError(null);
+    setDeleteUserPosts(true);
+    setDeleteTargetUser(targetUser);
+  };
+
+  // Permanently delete any non-owner user account & associated data
+  const handleConfirmDeleteUser = async () => {
+    if (!user || !isSuperAdmin || !deleteTargetUser) return;
+    const targetUid = deleteTargetUser.id;
+    const targetEmail = deleteTargetUser.email || '';
+    const targetName = deleteTargetUser.displayName || targetEmail || targetUid;
+
+    if (targetUid === user.uid || isSuperAdminEmail(targetEmail)) {
+      setDeleteUserError('Protected Super Admin owner accounts cannot be deleted.');
+      return;
+    }
+
+    try {
+      setDeletingUser(true);
+      setDeleteUserError(null);
+
+      // 1. Delete private user info subdocument (non-fatal if absent)
+      try {
+        await deleteDoc(doc(db, 'users', targetUid, 'private', 'info'));
+      } catch {
+        // Private doc may not exist
+      }
+
+      // 2. Best-effort cleanup of user's ratings subcollection
+      try {
+        const ratingsSnap = await getDocs(collection(db, 'users', targetUid, 'ratings'));
+        for (const rDoc of ratingsSnap.docs) {
+          await deleteDoc(rDoc.ref);
+        }
+      } catch {
+        // Non-fatal
+      }
+
+      // 3. Remove any linked Featured Member card(s) on the Home Screen
+      const linkedFeatured = featuredMembers.filter(
+        (fm) => fm.id === targetUid || fm.userId === targetUid
+      );
+      for (const fm of linkedFeatured) {
+        try {
+          const fmRatings = await getDocs(collection(db, 'featuredMembers', fm.id, 'ratings'));
+          for (const fr of fmRatings.docs) {
+            await deleteDoc(fr.ref);
+          }
+        } catch {
+          // Non-fatal
+        }
+        try {
+          await deleteDoc(doc(db, 'featuredMembers', fm.id));
+        } catch {
+          // Non-fatal
+        }
+      }
+
+      // 4. Delete Admin Membership applications for this user
+      try {
+        const appSnap = await getDocs(
+          query(collection(db, 'applications'), where('userId', '==', targetUid))
+        );
+        for (const aDoc of appSnap.docs) {
+          await deleteDoc(aDoc.ref);
+        }
+        await deleteDoc(doc(db, 'applications', targetUid)).catch(() => {});
+      } catch {
+        // Non-fatal
+      }
+
+      // 5. Delete notifications addressed to or sent by this user
+      try {
+        const notifRecipSnap = await getDocs(
+          query(collection(db, 'notifications'), where('recipientId', '==', targetUid))
+        );
+        for (const nDoc of notifRecipSnap.docs) {
+          await deleteDoc(nDoc.ref);
+        }
+        const notifSenderSnap = await getDocs(
+          query(collection(db, 'notifications'), where('senderId', '==', targetUid))
+        );
+        for (const nDoc of notifSenderSnap.docs) {
+          await deleteDoc(nDoc.ref);
+        }
+      } catch {
+        // Non-fatal
+      }
+
+      // 6. Optionally delete user's community posts and comments
+      if (deleteUserPosts) {
+        try {
+          const userPostsSnap = await getDocs(
+            query(collection(db, 'posts'), where('authorId', '==', targetUid))
+          );
+          for (const pDoc of userPostsSnap.docs) {
+            try {
+              const cSnap = await getDocs(collection(db, 'posts', pDoc.id, 'comments'));
+              for (const cDoc of cSnap.docs) {
+                await deleteDoc(cDoc.ref);
+              }
+              const lSnap = await getDocs(collection(db, 'posts', pDoc.id, 'likes'));
+              for (const lDoc of lSnap.docs) {
+                await deleteDoc(lDoc.ref);
+              }
+            } catch {
+              // Non-fatal subcollection cleanup
+            }
+            await deleteDoc(pDoc.ref);
+          }
+
+          const allPostsSnap = await getDocs(collection(db, 'posts'));
+          for (const pDoc of allPostsSnap.docs) {
+            try {
+              const userCommentsSnap = await getDocs(
+                query(
+                  collection(db, 'posts', pDoc.id, 'comments'),
+                  where('authorId', '==', targetUid)
+                )
+              );
+              for (const cDoc of userCommentsSnap.docs) {
+                await deleteDoc(cDoc.ref);
+              }
+            } catch {
+              // Non-fatal
+            }
+          }
+        } catch {
+          // Non-fatal
+        }
+      }
+
+      // 7. Delete the primary user account document
+      try {
+        await deleteDoc(doc(db, 'users', targetUid));
+      } catch (err) {
+        handleFirestoreError(err, OperationType.DELETE, `users/${targetUid}`);
+      }
+
+      // 8. Record audit log in Firestore & terminate live server session
+      try {
+        const logId = `log_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+        await setDoc(doc(db, 'auditLogs', logId), {
+          id: logId,
+          actorId: user.uid,
+          actorEmail: user.email || '',
+          action: 'DELETE_USER_ACCOUNT',
+          targetType: 'USER',
+          targetId: targetUid,
+          details: `Deleted account for ${targetName} (${targetEmail || targetUid})${
+            deleteUserPosts ? ' including community posts/comments' : ''
+          }`,
+          createdAt: new Date().toISOString(),
+        });
+      } catch {
+        // Non-fatal Firestore audit write
+      }
+
+      try {
+        await fetch('/api/admin/delete-user', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-user-id': user.uid,
+            'x-user-email': user.email || '',
+            'x-user-role': role,
+          },
+          body: JSON.stringify({
+            targetUserId: targetUid,
+            targetUserEmail: targetEmail,
+            targetUserName: targetName,
+          }),
+        });
+      } catch {
+        // Non-fatal server audit call
+      }
+
+      if (inspectingUser?.id === targetUid) {
+        setInspectingUser(null);
+      }
+      setDeleteTargetUser(null);
+      setUserActionBanner(`Account for "${targetName}" (${targetEmail || targetUid}) has been permanently deleted.`);
+      fetchStats();
+    } catch (err: unknown) {
+      console.error('Error deleting user account:', err);
+      let msg = 'Failed to delete user account. Please try again.';
+      if (err instanceof Error) {
+        try {
+          const parsed = JSON.parse(err.message);
+          if (parsed?.error?.toLowerCase().includes('permission')) {
+            msg = user.emailVerified
+              ? 'Permission denied while deleting user document. Please verify your Super Admin Firestore rules.'
+              : 'Your Super Admin email must be verified to delete accounts.';
+          } else if (parsed?.error) {
+            msg = parsed.error;
+          }
+        } catch {
+          msg = err.message || msg;
+        }
+      }
+      setDeleteUserError(msg);
+    } finally {
+      setDeletingUser(false);
+    }
+  };
+
   if (!isSuperAdmin) {
     return (
       <div className="neo-card max-w-md mx-auto text-center py-12">
@@ -1544,6 +1765,23 @@ export const SuperAdminDashboard: React.FC = () => {
             />
           </div>
 
+          {userActionBanner && (
+            <div className="mb-4 p-3 bg-emerald-50 border-2 border-emerald-500 rounded-2xl flex items-center justify-between gap-3 text-xs font-bold text-emerald-900">
+              <div className="flex items-center gap-2">
+                <i className="fas fa-check-circle text-emerald-600 text-sm"></i>
+                <span>{userActionBanner}</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setUserActionBanner(null)}
+                className="text-emerald-800 hover:text-black font-black px-2"
+                aria-label="Dismiss message"
+              >
+                &times;
+              </button>
+            </div>
+          )}
+
           <div className="admin-table-wrap">
             <table className="admin-table">
               <thead>
@@ -1711,10 +1949,19 @@ export const SuperAdminDashboard: React.FC = () => {
                               className={`p-1.5 rounded-lg border text-xs ${
                                 u.isSuspended
                                   ? 'bg-emerald-100 border-emerald-700 text-emerald-800 hover:bg-emerald-200'
-                                  : 'bg-red-100 border-red-700 text-red-800 hover:bg-red-200'
+                                  : 'bg-amber-100 border-amber-700 text-amber-800 hover:bg-amber-200'
                               }`}
                             >
                               <i className={`fas ${u.isSuspended ? 'fa-user-check' : 'fa-user-slash'}`}></i>
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() => handleOpenDeleteUser(u)}
+                              title={`Permanently delete ${u.displayName}'s account`}
+                              className="p-1.5 rounded-lg border border-red-700 bg-red-100 text-red-800 hover:bg-red-600 hover:text-white transition text-xs"
+                            >
+                              <i className="fas fa-trash-alt"></i>
                             </button>
                           </div>
                         )}
@@ -2207,7 +2454,7 @@ export const SuperAdminDashboard: React.FC = () => {
                 </div>
               )}
 
-              <div className="pt-2">
+              <div className="pt-2 flex flex-col sm:flex-row gap-2">
                 <button
                   type="button"
                   onClick={() => {
@@ -2216,11 +2463,22 @@ export const SuperAdminDashboard: React.FC = () => {
                     setNoticeTargetUser(target);
                     setIsNoticeComposerOpen(true);
                   }}
-                  className="w-full py-2 px-4 text-xs font-black flex items-center justify-center gap-2 bg-[#f9c74f] text-[#1e1e1e] border-2 border-[#1e1e1e] rounded-xl shadow-[0_3px_0_#1e1e1e] hover:bg-amber-400 transition cursor-pointer"
+                  className="flex-1 py-2 px-4 text-xs font-black flex items-center justify-center gap-2 bg-[#f9c74f] text-[#1e1e1e] border-2 border-[#1e1e1e] rounded-xl shadow-[0_3px_0_#1e1e1e] hover:bg-amber-400 transition cursor-pointer"
                 >
                   <i className="fas fa-paper-plane"></i>
                   <span>Send Direct Notice to {inspectingUser.displayName}</span>
                 </button>
+
+                {!isSuperAdminEmail(inspectingUser.email) && inspectingUser.id !== user?.uid && (
+                  <button
+                    type="button"
+                    onClick={() => handleOpenDeleteUser(inspectingUser)}
+                    className="py-2 px-4 text-xs font-black flex items-center justify-center gap-2 bg-red-600 text-white border-2 border-[#1e1e1e] rounded-xl shadow-[0_3px_0_#1e1e1e] hover:bg-red-700 transition cursor-pointer"
+                  >
+                    <i className="fas fa-trash-alt"></i>
+                    <span>Delete Account</span>
+                  </button>
+                )}
               </div>
             </div>
           </div>
@@ -2621,6 +2879,124 @@ export const SuperAdminDashboard: React.FC = () => {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL 3: PERMANENT ACCOUNT DELETION CONFIRMATION MODAL */}
+      {deleteTargetUser && (
+        <div
+          className="modal-overlay open"
+          onClick={(e) => {
+            if (e.target === e.currentTarget && !deletingUser) {
+              setDeleteTargetUser(null);
+            }
+          }}
+          role="dialog"
+          aria-modal="true"
+          aria-label="Delete user account confirmation"
+        >
+          <div className="modal max-w-md p-6 sm:p-7 border-3 border-[#1e1e1e] bg-white rounded-3xl shadow-[0_10px_0_#1e1e1e]">
+            <button
+              type="button"
+              className="modal-close"
+              onClick={() => setDeleteTargetUser(null)}
+              disabled={deletingUser}
+              aria-label="Close"
+            >
+              <i className="fas fa-times"></i>
+            </button>
+
+            <div className="text-center mb-4">
+              <div className="w-14 h-14 mx-auto mb-3 rounded-2xl bg-red-100 text-red-700 border-2 border-red-600 flex items-center justify-center text-2xl shadow-[0_3px_0_#dc2626]">
+                <i className="fas fa-user-times"></i>
+              </div>
+              <h3 className="font-black text-xl text-zinc-900 tracking-tight">
+                Delete User Account?
+              </h3>
+              <p className="text-xs text-zinc-600 mt-1">
+                This action permanently deletes this account from Cycle.exe and cannot be undone.
+              </p>
+            </div>
+
+            <div className="p-3.5 bg-zinc-50 border-2 border-zinc-900 rounded-2xl flex items-center gap-3 mb-4">
+              <div className="w-11 h-11 rounded-full border-2 border-zinc-900 bg-zinc-200 overflow-hidden flex items-center justify-center font-black text-sm shrink-0">
+                {deleteTargetUser.photoURL ? (
+                  <img
+                    src={deleteTargetUser.photoURL}
+                    alt={deleteTargetUser.displayName}
+                    className="w-full h-full object-cover"
+                  />
+                ) : (
+                  deleteTargetUser.displayName?.charAt(0).toUpperCase() || 'R'
+                )}
+              </div>
+              <div className="min-w-0 flex-1">
+                <div className="font-black text-sm text-zinc-900 truncate">
+                  {deleteTargetUser.displayName}
+                </div>
+                <div className="text-xs text-zinc-600 font-mono truncate">
+                  {deleteTargetUser.email || deleteTargetUser.id}
+                </div>
+              </div>
+              <span className={`role-badge ${deleteTargetUser.role}`}>
+                {deleteTargetUser.role}
+              </span>
+            </div>
+
+            <div className="p-3 bg-red-50 border border-red-300 rounded-xl text-xs text-red-900 space-y-1 mb-4">
+              <p className="font-bold">The following will be removed immediately:</p>
+              <ul className="list-disc list-inside text-[11px] space-y-0.5 text-red-800">
+                <li>User profile, private record, and role/membership clearance</li>
+                <li>Home screen Featured Leader card (if featured)</li>
+                <li>Admin membership applications and inbox notifications</li>
+                <li>Active session (signed out immediately if currently online)</li>
+              </ul>
+            </div>
+
+            <label className="flex items-start gap-2.5 p-3 bg-zinc-50 border border-zinc-300 rounded-xl text-xs font-bold text-zinc-800 cursor-pointer mb-4">
+              <input
+                type="checkbox"
+                checked={deleteUserPosts}
+                onChange={(e) => setDeleteUserPosts(e.target.checked)}
+                disabled={deletingUser}
+                className="mt-0.5 w-4 h-4 accent-red-600"
+              />
+              <span>Also delete all community feed posts &amp; comments authored by this user</span>
+            </label>
+
+            {deleteUserError && (
+              <div className="mb-4 p-3 bg-red-50 border-2 border-red-500 rounded-xl text-xs font-bold text-red-700">
+                {deleteUserError}
+              </div>
+            )}
+
+            <div className="flex items-center justify-end gap-2 pt-3 border-t border-zinc-200">
+              <button
+                type="button"
+                onClick={() => setDeleteTargetUser(null)}
+                disabled={deletingUser}
+                className="btn-secondary py-2 px-4 text-xs font-bold"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmDeleteUser}
+                disabled={deletingUser}
+                className="py-2 px-5 text-xs font-black rounded-xl bg-red-600 hover:bg-red-700 text-white border-2 border-[#1e1e1e] shadow-[0_3px_0_#1e1e1e] transition flex items-center gap-1.5 disabled:opacity-60"
+              >
+                {deletingUser ? (
+                  <>
+                    <i className="fas fa-spinner fa-spin"></i> Deleting...
+                  </>
+                ) : (
+                  <>
+                    <i className="fas fa-trash-alt"></i> Permanently Delete Account
+                  </>
+                )}
+              </button>
+            </div>
           </div>
         </div>
       )}

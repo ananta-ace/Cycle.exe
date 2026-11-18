@@ -19,7 +19,7 @@ import { WelcomeMembershipModal } from './components/WelcomeMembershipModal';
 import { RatingModal } from './components/RatingModal';
 
 const MainContent: React.FC = () => {
-  const { isSuperAdmin, isAdmin } = useAuth();
+  const { isSuperAdmin, isAdmin, accountNotice, clearAccountNotice } = useAuth();
 
   const [activeTab, setActiveTab] = useState<TabType>(() => {
     const hash = window.location.hash.toLowerCase().replace('#', '');
@@ -134,6 +134,22 @@ const MainContent: React.FC = () => {
 
       {/* Super Admin bootstrap banner if owner email detected */}
       <SuperAdminBootstrapBanner />
+
+      {accountNotice && (
+        <div className="mb-6 p-4 bg-rose-50 border-2 border-rose-600 rounded-2xl flex items-center justify-between gap-4 text-rose-900 shadow-sm">
+          <div className="flex items-center gap-3 text-xs sm:text-sm font-bold">
+            <i className="fas fa-user-times text-rose-600 text-lg"></i>
+            <span>{accountNotice}</span>
+          </div>
+          <button
+            type="button"
+            onClick={clearAccountNotice}
+            className="text-xs font-black px-3 py-1 rounded-lg border border-rose-400 bg-white hover:bg-rose-100"
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
 
       <main>
         {activeTab === 'members' && (
