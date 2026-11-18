@@ -383,17 +383,23 @@ export const ProfileView: React.FC = () => {
         )}
       </div>
 
-      {/* Super Admin Notice if Designated Owner */}
-      {isSuperAdminEmail(user.email) && (
+      {/* Super Admin / Permanent Owner Status Notice */}
+      {(isSuperAdminEmail(user.email) || isSuperAdmin) && (
         <div className="p-4 bg-amber-50 border-2 border-amber-400 rounded-2xl flex items-center justify-between gap-4">
           <div className="flex items-center gap-3">
             <i className="fas fa-crown text-2xl text-amber-600"></i>
             <div>
-              <div className="text-sm font-bold text-amber-900">Super Admin Privileges</div>
+              <div className="text-sm font-bold text-amber-900">
+                {isSuperAdminEmail(user.email)
+                  ? 'Permanent Owner Privileges'
+                  : 'Appointed Super Admin Privileges'}
+              </div>
               <div className="text-xs text-amber-800">
-                {isSuperAdmin
-                  ? 'Your account holds the highest authority in Cycle.exe 2.0.'
-                  : 'Click the banner at the top of the page to bootstrap your Super Admin account.'}
+                {isSuperAdminEmail(user.email)
+                  ? isSuperAdmin
+                    ? 'Your account holds the highest permanent authority in Cycle.exe 2.0 and can appoint or remove Super Admins.'
+                    : 'Click the banner at the top of the page to bootstrap your Super Admin account.'
+                  : 'You hold appointed Super Admin clearance on Cycle.exe 2.0. Permanent Owners retain highest authority.'}
               </div>
             </div>
           </div>

@@ -39,13 +39,60 @@ const AUTHORIZED_SUPER_ADMIN_EMAILS = [
   'towhidulislamananta@gmail.com',
 ];
 
-function isSuperAdminEmail(email?: string | null): boolean {
+function isPermanentOwnerEmail(email?: string | null): boolean {
   if (!email) return false;
   return AUTHORIZED_SUPER_ADMIN_EMAILS.includes(email.toLowerCase().trim());
 }
 
-function checkIsOwner(_uid?: string | null, email?: string | null, _role?: string | null): boolean {
-  return isSuperAdminEmail(email);
+function isSuperAdminEmail(email?: string | null): boolean {
+  return isPermanentOwnerEmail(email);
+}
+
+interface ActorAuthority {
+  isPermanentOwner: boolean;
+  isSuperAdmin: boolean;
+  role: string;
+  isSuspended: boolean;
+}
+
+async function resolveActorAuthority(
+  uid?: string | null,
+  email?: string | null
+): Promise<ActorAuthority> {
+  if (isPermanentOwnerEmail(email)) {
+    return {
+      isPermanentOwner: true,
+      isSuperAdmin: true,
+      role: 'SUPER_ADMIN',
+      isSuspended: false,
+    };
+  }
+
+  if (uid) {
+    try {
+      const snap = await serverGetDoc(serverDoc(serverDb, 'users', uid));
+      if (snap.exists()) {
+        const data = snap.data() || {};
+        const dbRole = typeof data.role === 'string' ? data.role : 'PUBLIC';
+        const isSuspended = data.isSuspended === true;
+        return {
+          isPermanentOwner: false,
+          isSuperAdmin: dbRole === 'SUPER_ADMIN' && !isSuspended,
+          role: dbRole,
+          isSuspended,
+        };
+      }
+    } catch (err) {
+      console.warn('[Cycle.exe Server] Failed to verify actor authority from Firestore:', err);
+    }
+  }
+
+  return {
+    isPermanentOwner: false,
+    isSuperAdmin: false,
+    role: 'PUBLIC',
+    isSuspended: false,
+  };
 }
 
 // Initialize trusted server-side Firestore connection
@@ -211,17 +258,24 @@ function getAuthFromReq(req: Request) {
 // 0. Super Admin Status Verification (Server-Side Source of Truth)
 app.get('/api/admin/verify-super-admin', async (req: Request, res: Response) => {
   const { uid, email } = getAuthFromReq(req);
-  const authorized = isSuperAdminEmail(email);
+  const authority = await resolveActorAuthority(uid, email);
 
   return res.json({
     configured: true,
-    status: authorized ? 'CONFIRMED_ACTIVE' : 'ALLOWLIST_ENFORCED',
+    status: authority.isPermanentOwner
+      ? 'CONFIRMED_PERMANENT_OWNER'
+      : authority.isSuperAdmin
+        ? 'CONFIRMED_APPOINTED_SUPER_ADMIN'
+        : 'ALLOWLIST_AND_APPOINTMENT_ENFORCED',
     authorizedSuperAdmins: AUTHORIZED_SUPER_ADMIN_EMAILS,
     email: email || DESIGNATED_SUPER_ADMIN_EMAIL,
     uid: uid || null,
-    role: authorized ? 'SUPER_ADMIN' : 'PUBLIC',
+    isPermanentOwner: authority.isPermanentOwner,
+    isSuperAdmin: authority.isSuperAdmin,
+    role: authority.isSuperAdmin ? 'SUPER_ADMIN' : authority.role,
     verifiedAt: new Date().toISOString(),
-    details: 'Only ananta.base@gmail.com and towhidulislamananta@gmail.com are authorized as Super Admin.',
+    details:
+      'Permanent Owners (ananta.base@gmail.com and towhidulislamananta@gmail.com) hold highest authority and can appoint or remove Super Admins.',
   });
 });
 
@@ -297,18 +351,18 @@ app.post('/api/upload', (req: Request, res: Response) => {
 });
 
 // 2. Active Session Heartbeat (Tracks BOTH authenticated users and anonymous guest visitors)
-app.post('/api/session/heartbeat', (req: Request, res: Response) => {
+app.post('/api/session/heartbeat', async (req: Request, res: Response) => {
   const { uid, email, role } = getAuthFromReq(req);
   const visitorId = (req.body?.visitorId as string) || (req.headers['x-visitor-id'] as string) || '';
   const sessionId = uid || visitorId || `guest_${req.ip.replace(/[^a-zA-Z0-9]/g, '_')}`;
 
-  const isOwner = checkIsOwner(uid, email, role);
+  const authority = await resolveActorAuthority(uid, email);
 
   activeSessions.set(sessionId, {
     sessionId,
     userId: uid || undefined,
     email: email || (uid ? 'Registered Rider' : 'Guest Visitor'),
-    role: isOwner ? 'SUPER_ADMIN' : uid ? role : 'PUBLIC_GUEST',
+    role: authority.isSuperAdmin ? 'SUPER_ADMIN' : uid ? (authority.role || role) : 'PUBLIC_GUEST',
     isGuest: !uid,
     lastActiveAt: Date.now(),
   });
@@ -329,14 +383,13 @@ app.post('/api/session/heartbeat', (req: Request, res: Response) => {
 });
 
 // 3. Super Admin Analytics & Real-Time Live Visitors (RESTRICTED TO SUPER ADMIN ONLY)
-app.get('/api/admin/stats', (req: Request, res: Response) => {
-  const { uid, role, email } = getAuthFromReq(req);
+app.get('/api/admin/stats', async (req: Request, res: Response) => {
+  const { uid, email } = getAuthFromReq(req);
+  const authority = await resolveActorAuthority(uid, email);
 
-  const isOwner = checkIsOwner(uid, email, role);
-
-  if (!isOwner) {
+  if (!authority.isSuperAdmin) {
     return res.status(403).json({
-      error: 'Forbidden: Only the Super Admin can view private statistics and active sessions',
+      error: 'Forbidden: Only Super Admins can view private statistics and active sessions',
     });
   }
 
@@ -376,14 +429,13 @@ app.get('/api/admin/stats', (req: Request, res: Response) => {
 });
 
 // 4. Generate Admin / Membership Invitation Code (SUPER ADMIN ONLY)
-app.post('/api/invitations/generate', (req: Request, res: Response) => {
-  const { uid, email, role } = getAuthFromReq(req);
+app.post('/api/invitations/generate', async (req: Request, res: Response) => {
+  const { uid, email } = getAuthFromReq(req);
+  const authority = await resolveActorAuthority(uid, email);
 
-  const isOwner = checkIsOwner(uid, email, role);
-
-  if (!isOwner) {
+  if (!authority.isSuperAdmin) {
     return res.status(403).json({
-      error: 'Forbidden: Only the Super Admin can generate invitation codes',
+      error: 'Forbidden: Only Super Admins can generate invitation codes',
     });
   }
 
@@ -436,14 +488,13 @@ app.post('/api/invitations/generate', (req: Request, res: Response) => {
 });
 
 // 5. List Invitation Codes (SUPER ADMIN ONLY)
-app.get('/api/invitations', (req: Request, res: Response) => {
-  const { uid, email, role } = getAuthFromReq(req);
+app.get('/api/invitations', async (req: Request, res: Response) => {
+  const { uid, email } = getAuthFromReq(req);
+  const authority = await resolveActorAuthority(uid, email);
 
-  const isOwner = checkIsOwner(uid, email, role);
-
-  if (!isOwner) {
+  if (!authority.isSuperAdmin) {
     return res.status(403).json({
-      error: 'Forbidden: Only the Super Admin can view invitation codes',
+      error: 'Forbidden: Only Super Admins can view invitation codes',
     });
   }
 
@@ -467,15 +518,14 @@ app.get('/api/invitations', (req: Request, res: Response) => {
 
 
 // 6. Revoke Invitation Code (SUPER ADMIN ONLY)
-app.post('/api/invitations/revoke', (req: Request, res: Response) => {
-  const { uid, email, role } = getAuthFromReq(req);
+app.post('/api/invitations/revoke', async (req: Request, res: Response) => {
+  const { uid, email } = getAuthFromReq(req);
   const { codeId } = req.body;
+  const authority = await resolveActorAuthority(uid, email);
 
-  const isOwner = checkIsOwner(uid, email, role);
-
-  if (!isOwner) {
+  if (!authority.isSuperAdmin) {
     return res.status(403).json({
-      error: 'Forbidden: Only the Super Admin can revoke invitation codes',
+      error: 'Forbidden: Only Super Admins can revoke invitation codes',
     });
   }
 
@@ -499,15 +549,14 @@ app.post('/api/invitations/revoke', (req: Request, res: Response) => {
 });
 
 // 7. Update Member Slot Limit (SUPER ADMIN ONLY)
-app.post('/api/invitations/update-limit', (req: Request, res: Response) => {
-  const { uid, email, role } = getAuthFromReq(req);
+app.post('/api/invitations/update-limit', async (req: Request, res: Response) => {
+  const { uid, email } = getAuthFromReq(req);
   const { limit } = req.body;
+  const authority = await resolveActorAuthority(uid, email);
 
-  const isOwner = checkIsOwner(uid, email, role);
-
-  if (!isOwner) {
+  if (!authority.isSuperAdmin) {
     return res.status(403).json({
-      error: 'Forbidden: Only the Super Admin can configure member slot limits',
+      error: 'Forbidden: Only Super Admins can configure member slot limits',
     });
   }
 
@@ -639,34 +688,69 @@ app.post('/api/invitations/redeem', async (req: Request, res: Response) => {
   });
 });
 
-// 9. Super Admin Role Management
-app.post('/api/admin/roles', (req: Request, res: Response) => {
-  const { uid, email, role } = getAuthFromReq(req);
+// 9. Super Admin Role Management (Permanent Owners can appoint/remove Super Admins; Super Admins can appoint others)
+app.post('/api/admin/roles', async (req: Request, res: Response) => {
+  const { uid, email } = getAuthFromReq(req);
   const { targetUserId, targetUserEmail, action, newRole, isSuspended } = req.body;
 
-  const isOwner = checkIsOwner(uid, email, role);
+  const authority = await resolveActorAuthority(uid, email);
 
-  if (!isOwner) {
+  if (!authority.isSuperAdmin) {
     return res.status(403).json({
-      error: 'Forbidden: Only the Super Admin can promote, demote, or suspend accounts',
+      error: 'Forbidden: Only Super Admins or Permanent Owners can manage roles or suspend accounts',
     });
   }
 
-  if (!targetUserId) {
+  if (!targetUserId || typeof targetUserId !== 'string') {
     return res.status(400).json({ error: 'Target user ID required' });
   }
 
-  if (isSuperAdminEmail(targetUserEmail)) {
-    return res.status(400).json({ error: 'Super Admin account cannot be modified' });
+  const allowedRoles = ['PUBLIC', 'MEMBER', 'ADMIN', 'SUPER_ADMIN'];
+  if (newRole !== undefined && !allowedRoles.includes(newRole)) {
+    return res.status(400).json({ error: 'Invalid target role specified' });
+  }
+
+  let resolvedTargetEmail = (targetUserEmail || '').toString().toLowerCase().trim();
+  let resolvedTargetRole = '';
+  try {
+    const targetSnap = await serverGetDoc(serverDoc(serverDb, 'users', targetUserId));
+    if (targetSnap.exists()) {
+      const targetData = targetSnap.data() || {};
+      if (typeof targetData.email === 'string' && targetData.email) {
+        resolvedTargetEmail = targetData.email.toLowerCase().trim();
+      }
+      if (typeof targetData.role === 'string') {
+        resolvedTargetRole = targetData.role;
+      }
+    }
+  } catch (err) {
+    console.warn('[Cycle.exe Server] Could not inspect target user before role change:', err);
+  }
+
+  if (isPermanentOwnerEmail(resolvedTargetEmail)) {
+    return res.status(403).json({ error: 'Permanent Owner account cannot be modified or demoted' });
+  }
+
+  const targetIsSuperAdmin = resolvedTargetRole === 'SUPER_ADMIN';
+  if (targetIsSuperAdmin && !authority.isPermanentOwner) {
+    return res.status(403).json({
+      error: 'Forbidden: Only the Permanent Owner can demote, modify, or suspend an existing Super Admin',
+    });
+  }
+
+  if (targetUserId === uid && !authority.isPermanentOwner) {
+    return res.status(403).json({
+      error: 'Forbidden: Only the Permanent Owner can modify a Super Admin clearance',
+    });
   }
 
   addAuditLog(
     uid,
     email,
-    action || 'MODIFY_USER_ROLE',
+    action || (newRole === 'SUPER_ADMIN' ? 'PROMOTE_TO_SUPER_ADMIN' : 'MODIFY_USER_ROLE'),
     'USER',
     targetUserId,
-    `Updated role to ${newRole || 'unchanged'}, isSuspended: ${isSuspended ?? 'unchanged'} for ${targetUserEmail || targetUserId}`
+    `Updated role to ${newRole || 'unchanged'}, isSuspended: ${isSuspended ?? 'unchanged'} for ${resolvedTargetEmail || targetUserId}`
   );
 
   return res.json({
@@ -678,16 +762,16 @@ app.post('/api/admin/roles', (req: Request, res: Response) => {
   });
 });
 
-// 9.5 Delete User Account Audit & Session Purge (SUPER ADMIN ONLY)
-app.post('/api/admin/delete-user', (req: Request, res: Response) => {
-  const { uid, email, role } = getAuthFromReq(req);
+// 9.5 Delete User Account Audit & Session Purge (SUPER ADMIN ONLY; Permanent Owner required to delete another SUPER_ADMIN)
+app.post('/api/admin/delete-user', async (req: Request, res: Response) => {
+  const { uid, email } = getAuthFromReq(req);
   const { targetUserId, targetUserEmail, targetUserName } = req.body;
 
-  const isOwner = checkIsOwner(uid, email, role);
+  const authority = await resolveActorAuthority(uid, email);
 
-  if (!isOwner) {
+  if (!authority.isSuperAdmin) {
     return res.status(403).json({
-      error: 'Forbidden: Only the Super Admin can delete user accounts',
+      error: 'Forbidden: Only Super Admins can delete user accounts',
     });
   }
 
@@ -695,8 +779,31 @@ app.post('/api/admin/delete-user', (req: Request, res: Response) => {
     return res.status(400).json({ error: 'Target user ID is required' });
   }
 
-  if (targetUserId === uid || isSuperAdminEmail(targetUserEmail)) {
-    return res.status(400).json({ error: 'Super Admin accounts cannot be deleted' });
+  let resolvedTargetEmail = (targetUserEmail || '').toString().toLowerCase().trim();
+  let resolvedTargetRole = '';
+  try {
+    const targetSnap = await serverGetDoc(serverDoc(serverDb, 'users', targetUserId));
+    if (targetSnap.exists()) {
+      const targetData = targetSnap.data() || {};
+      if (typeof targetData.email === 'string' && targetData.email) {
+        resolvedTargetEmail = targetData.email.toLowerCase().trim();
+      }
+      if (typeof targetData.role === 'string') {
+        resolvedTargetRole = targetData.role;
+      }
+    }
+  } catch (err) {
+    console.warn('[Cycle.exe Server] Could not inspect target user before deletion:', err);
+  }
+
+  if (targetUserId === uid || isPermanentOwnerEmail(resolvedTargetEmail)) {
+    return res.status(400).json({ error: 'Permanent Owner or active self accounts cannot be deleted' });
+  }
+
+  if (resolvedTargetRole === 'SUPER_ADMIN' && !authority.isPermanentOwner) {
+    return res.status(403).json({
+      error: 'Forbidden: Only the Permanent Owner can delete an appointed Super Admin account',
+    });
   }
 
   // Terminate any active heartbeat session for the deleted user
@@ -708,7 +815,7 @@ app.post('/api/admin/delete-user', (req: Request, res: Response) => {
     'DELETE_USER_ACCOUNT',
     'USER',
     targetUserId,
-    `Permanently deleted account for ${targetUserName || targetUserEmail || targetUserId} (${targetUserEmail || 'no email'})`
+    `Permanently deleted account for ${targetUserName || resolvedTargetEmail || targetUserId} (${resolvedTargetEmail || 'no email'})`
   );
 
   return res.json({
@@ -720,14 +827,14 @@ app.post('/api/admin/delete-user', (req: Request, res: Response) => {
 
 // 10. Send Direct Custom Notice to User (SUPER ADMIN ONLY)
 app.post('/api/admin/send-notice', async (req: Request, res: Response) => {
-  const { uid, email, role } = getAuthFromReq(req);
+  const { uid, email } = getAuthFromReq(req);
   const { recipientId, title, message, isUrgent } = req.body;
 
-  const isOwner = checkIsOwner(uid, email, role);
+  const authority = await resolveActorAuthority(uid, email);
 
-  if (!isOwner) {
+  if (!authority.isSuperAdmin) {
     return res.status(403).json({
-      error: 'Forbidden: Only the Super Admin can send direct custom notices to users',
+      error: 'Forbidden: Only Super Admins can send direct custom notices to users',
     });
   }
 
@@ -834,16 +941,21 @@ app.post('/api/notices/reply', async (req: Request, res: Response) => {
 
     const data = snap.data();
     const isRecipient = data.recipientId === uid;
-    const isOwner = checkIsOwner(uid, email, role);
+    const authority = await resolveActorAuthority(uid, email);
+    const isSuper = authority.isSuperAdmin;
 
-    if (!isRecipient && !isOwner) {
+    if (!isRecipient && !isSuper) {
       return res.status(403).json({
         error: 'Forbidden: You are not authorized to reply to this notice',
       });
     }
 
     // Get sender display name
-    let senderName = isOwner ? 'Super Admin (Owner)' : 'Rider';
+    let senderName = authority.isPermanentOwner
+      ? 'Super Admin (Owner)'
+      : isSuper
+        ? 'Super Admin'
+        : 'Rider';
     try {
       const userSnap = await serverGetDoc(serverDoc(serverDb, 'users', uid));
       if (userSnap.exists()) {
@@ -857,7 +969,7 @@ app.post('/api/notices/reply', async (req: Request, res: Response) => {
       senderId: uid,
       senderName,
       senderEmail: email,
-      senderRole: isOwner ? 'SUPER_ADMIN' : role,
+      senderRole: isSuper ? 'SUPER_ADMIN' : authority.role || role,
       text: text.trim().substring(0, 1000),
       createdAt: now,
     };
@@ -878,7 +990,7 @@ app.post('/api/notices/reply', async (req: Request, res: Response) => {
     );
 
     // If user replied, notify Super Admin
-    if (!isOwner) {
+    if (!isSuper) {
       const notifId = `notif_${Date.now()}_${crypto.randomBytes(2).toString('hex')}`;
       await serverSetDoc(
         serverDoc(serverDb, 'notifications', notifId),
@@ -932,7 +1044,8 @@ app.post('/api/notices/mark-read', async (req: Request, res: Response) => {
     }
 
     const data = snap.data();
-    if (data.recipientId !== uid && !isSuperAdminEmail(email)) {
+    const authority = await resolveActorAuthority(uid, email);
+    if (data.recipientId !== uid && !authority.isSuperAdmin) {
       return res.status(403).json({ error: 'Unauthorized to mark this notice as read' });
     }
 

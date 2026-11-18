@@ -32,12 +32,15 @@ export const isSuperAdminEmail = (email?: string | null): boolean => {
   return AUTHORIZED_SUPER_ADMIN_EMAILS.includes(email.toLowerCase().trim());
 };
 
+export const isPermanentOwnerEmail = isSuperAdminEmail;
+
 export const DESIGNATED_SUPER_ADMIN_EMAIL = 'ananta.base@gmail.com';
 
 interface AuthContextType {
   user: User | null;
   profile: UserProfile | null;
   role: UserRole;
+  isPermanentOwner: boolean;
   isSuperAdmin: boolean;
   firestoreSuperAdminSynced: boolean;
   isAdmin: boolean;
@@ -81,9 +84,9 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       (snapshot) => {
         let count = 0;
         const isSuper =
-          profile?.role === 'SUPER_ADMIN' ||
-          isSuperAdminEmail(user.email);
-        const isAdm = profile?.role === 'ADMIN' || isSuper;
+          isSuperAdminEmail(user.email) ||
+          (profile?.role === 'SUPER_ADMIN' && !profile?.isSuspended);
+        const isAdm = (profile?.role === 'ADMIN' && !profile?.isSuspended) || isSuper;
 
         snapshot.forEach((docSnap) => {
           const data = docSnap.data();
@@ -169,22 +172,18 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
                   // Cannot self-promote yet under live Firestore rules until synced by existing Super Admin or rules update
                 }
               }
-              // When signed in with live Firestore Super Admin rights (e.g. towhidulislamananta@gmail.com),
-              // ensure ALL authorized Super Admin accounts (including ananta.base@gmail.com) have role === 'SUPER_ADMIN' in Firestore.
+              // When signed in with live Firestore Permanent Owner rights (e.g. towhidulislamananta@gmail.com),
+              // ensure ALL Permanent Owner accounts (including ananta.base@gmail.com) have role === 'SUPER_ADMIN' in Firestore,
+              // without removing promoted SUPER_ADMIN users.
               try {
                 const allSnap = await getDocs(collection(db, 'users'));
                 for (const d of allSnap.docs) {
                   const uData = d.data() as Partial<UserProfile>;
-                  const shouldBeSuper = isSuperAdminEmail(uData.email);
-                  if (shouldBeSuper && uData.role !== 'SUPER_ADMIN') {
+                  const shouldBeOwner = isSuperAdminEmail(uData.email);
+                  if (shouldBeOwner && (uData.role !== 'SUPER_ADMIN' || uData.isSuspended)) {
                     await updateDoc(doc(db, 'users', d.id), {
                       role: 'SUPER_ADMIN',
                       isSuspended: false,
-                      updatedAt: now,
-                    });
-                  } else if (!shouldBeSuper && uData.role === 'SUPER_ADMIN') {
-                    await updateDoc(doc(db, 'users', d.id), {
-                      role: 'PUBLIC',
                       updatedAt: now,
                     });
                   }
@@ -322,19 +321,14 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       let updatedCount = 0;
       for (const d of allSnap.docs) {
         const uData = d.data() as Partial<UserProfile>;
-        const shouldBeSuper = isSuperAdminEmail(uData.email);
-        if (shouldBeSuper && uData.role !== 'SUPER_ADMIN') {
+        const shouldBeOwner = isSuperAdminEmail(uData.email);
+        if (shouldBeOwner && (uData.role !== 'SUPER_ADMIN' || uData.isSuspended)) {
           await updateDoc(doc(db, 'users', d.id), {
             role: 'SUPER_ADMIN',
             isSuspended: false,
             updatedAt: now,
           });
           updatedCount++;
-        } else if (!shouldBeSuper && uData.role === 'SUPER_ADMIN') {
-          await updateDoc(doc(db, 'users', d.id), {
-            role: 'PUBLIC',
-            updatedAt: now,
-          });
         }
       }
 
@@ -472,22 +466,19 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
   };
 
-  const isSuperAdmin = isSuperAdminEmail(user?.email);
-  const firestoreSuperAdminSynced = isSuperAdmin && profile?.role === 'SUPER_ADMIN';
+  const isPermanentOwner = isSuperAdminEmail(user?.email);
+  const isSuspended = profile?.isSuspended || false;
   const rawRole: UserRole = profile?.role || 'PUBLIC';
-  const role: UserRole = isSuperAdmin
-    ? 'SUPER_ADMIN'
-    : rawRole === 'SUPER_ADMIN'
-    ? 'PUBLIC'
-    : rawRole;
-  const isAdmin = isSuperAdmin || (role === 'ADMIN' && !profile?.isSuspended);
+  const role: UserRole = isPermanentOwner ? 'SUPER_ADMIN' : rawRole;
+  const isSuperAdmin = isPermanentOwner || (role === 'SUPER_ADMIN' && !isSuspended);
+  const firestoreSuperAdminSynced = isPermanentOwner && profile?.role === 'SUPER_ADMIN';
+  const isAdmin = isSuperAdmin || (role === 'ADMIN' && !isSuspended);
   const isMember =
     (role === 'MEMBER' ||
       profile?.isAdminMember === true ||
       profile?.adminMembershipStatus === 'APPROVED' ||
       isAdmin) &&
-    !profile?.isSuspended;
-  const isSuspended = profile?.isSuspended || false;
+    !isSuspended;
 
   return (
     <AuthContext.Provider
@@ -495,6 +486,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         user,
         profile,
         role,
+        isPermanentOwner,
         isSuperAdmin,
         firestoreSuperAdminSynced,
         isAdmin,

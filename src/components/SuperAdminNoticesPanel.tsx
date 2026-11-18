@@ -63,7 +63,7 @@ export const SuperAdminNoticesPanel: React.FC<SuperAdminNoticesPanelProps> = ({
   onOpenComposer,
   onCloseComposer,
 }) => {
-  const { user, isSuperAdmin, role } = useAuth();
+  const { user, isSuperAdmin, isPermanentOwner, role } = useAuth();
 
   const [notices, setNotices] = useState<AppNotification[]>([]);
   const [loading, setLoading] = useState(true);
@@ -939,7 +939,7 @@ export const SuperAdminNoticesPanel: React.FC<SuperAdminNoticesPanelProps> = ({
                       Super Admin (You)
                     </span>
                     <span className="text-[9px] bg-[#1e1e1e] text-[#f9c74f] px-1.5 py-0.2 rounded font-black">
-                      OWNER
+                      {isPermanentOwner ? 'OWNER' : 'SUPER ADMIN'}
                     </span>
                   </div>
                   <span className="text-[10px] text-zinc-400">

@@ -16,10 +16,26 @@ service cloud.firestore {
       return isSignedIn() && request.auth.uid == userId;
     }
 
+    function isPermanentOwner() {
+      return isSignedIn() && request.auth.token.email_verified == true && (
+        request.auth.token.email == 'ananta.base@gmail.com' ||
+        request.auth.token.email == 'towhidulislamananta@gmail.com'
+      );
+    }
+
+    function isPermanentOwnerDoc(data) {
+      return 'email' in data && (
+        data.email == 'ananta.base@gmail.com' ||
+        data.email == 'towhidulislamananta@gmail.com'
+      );
+    }
+
     function isSuperAdmin() {
-      return isSignedIn() && (
-        (request.auth.token.email == 'ananta.base@gmail.com' && request.auth.token.email_verified == true) ||
-        (request.auth.token.email == 'towhidulislamananta@gmail.com' && request.auth.token.email_verified == true)
+      return isPermanentOwner() || (
+        isSignedIn() &&
+        exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'SUPER_ADMIN' &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.isSuspended != true
       );
     }
 
@@ -70,12 +86,25 @@ service cloud.firestore {
       allow list: if true;
 
       allow create: if isValidId(userId) && request.resource.data.id == userId && (
-        (isSuperAdmin() && request.resource.data.role == 'SUPER_ADMIN') ||
+        (isPermanentOwner() && request.resource.data.role == 'SUPER_ADMIN') ||
         (isSignedIn() && request.auth.uid == userId && request.resource.data.role == 'PUBLIC' && request.resource.data.isSuspended == false)
       );
 
       allow update: if isValidId(userId) && (
-        isSuperAdmin() ||
+        (
+          isPermanentOwner() && (
+            !isPermanentOwnerDoc(resource.data) ||
+            (isOwner(userId) && request.resource.data.role == 'SUPER_ADMIN' && request.resource.data.isSuspended == false)
+          )
+        ) ||
+        (
+          // Appointed Super Admins can promote or manage non-owner, non-Super Admin users (including promoting to SUPER_ADMIN),
+          // but only Permanent Owners can demote, suspend, or modify existing Super Admins or Permanent Owners.
+          isSuperAdmin() &&
+          !isPermanentOwnerDoc(resource.data) &&
+          resource.data.role != 'SUPER_ADMIN' &&
+          request.resource.data.role in ['PUBLIC', 'MEMBER', 'ADMIN', 'SUPER_ADMIN']
+        ) ||
         (
           isOwner(userId) &&
           request.resource.data.role == resource.data.role &&
@@ -97,7 +126,10 @@ service cloud.firestore {
         )
       );
 
-      allow delete: if isSuperAdmin();
+      allow delete: if (
+        (isPermanentOwner() && !isPermanentOwnerDoc(resource.data)) ||
+        (isSuperAdmin() && !isPermanentOwnerDoc(resource.data) && resource.data.role != 'SUPER_ADMIN')
+      );
 
       // Private user info
       match /private/info {

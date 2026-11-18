@@ -15,6 +15,7 @@ import {
 import { db, handleFirestoreError, OperationType } from '../firebase';
 import { useAuth, isSuperAdminEmail } from '../context/AuthContext';
 import {
+  UserRole,
   UserProfile,
   InvitationCodeSummary,
   SuperAdminStats,
@@ -25,7 +26,7 @@ import { uploadImage, isImageFile } from '../utils/imageUpload';
 import { SuperAdminNoticesPanel } from './SuperAdminNoticesPanel';
 
 export const SuperAdminDashboard: React.FC = () => {
-  const { user, profile, isSuperAdmin, role, syncSuperAdminAccess } = useAuth();
+  const { user, profile, isSuperAdmin, isPermanentOwner, role, syncSuperAdminAccess } = useAuth();
 
   // All registered users from Firestore
   const [allUsers, setAllUsers] = useState<UserProfile[]>([]);
@@ -178,22 +179,19 @@ export const SuperAdminDashboard: React.FC = () => {
     };
   }, [isSuperAdmin]);
 
-  // Ensure all authorized Super Admin emails (ananta.base@gmail.com & towhidulislamananta@gmail.com)
-  // have role === 'SUPER_ADMIN' in Firestore whenever a live Super Admin opens the hub
+  // Ensure Permanent Owner accounts (ananta.base@gmail.com & towhidulislamananta@gmail.com)
+  // have role === 'SUPER_ADMIN' in Firestore whenever a Permanent Owner opens the hub
   useEffect(() => {
-    if (!isSuperAdmin || allUsers.length === 0) return;
+    if (!isPermanentOwner || allUsers.length === 0) return;
     const missingSync = allUsers.some(
-      (u) => isSuperAdminEmail(u.email) && u.role !== 'SUPER_ADMIN'
+      (u) => isSuperAdminEmail(u.email) && (u.role !== 'SUPER_ADMIN' || u.isSuspended)
     );
-    const staleOther = allUsers.some(
-      (u) => !isSuperAdminEmail(u.email) && u.role === 'SUPER_ADMIN'
-    );
-    if (missingSync || staleOther) {
+    if (missingSync) {
       syncSuperAdminAccess().catch(() => {
         // Handled cleanly via banner if current user lacks cross-user write permission yet
       });
     }
-  }, [isSuperAdmin, allUsers]);
+  }, [isPermanentOwner, allUsers]);
 
   // Approve Admin Membership Application
   const handleApproveApp = async (app: AdminMembershipApplication) => {
@@ -740,25 +738,45 @@ export const SuperAdminDashboard: React.FC = () => {
     }
   };
 
-  // Super Admin change role
+  // Super Admin change role (Permanent Owner or Super Admin can promote to SUPER_ADMIN; ONLY Permanent Owner can remove/change an existing SUPER_ADMIN)
   const handleChangeRole = async (targetUser: UserProfile, newRole: string) => {
-    if (!user) return;
+    if (!user || !isSuperAdmin) return;
     if (isSuperAdminEmail(targetUser.email)) {
-      alert('A designated Super Admin account role cannot be changed.');
+      setUserActionBanner('Permanent Owner account roles cannot be changed.');
+      return;
+    }
+
+    const targetIsSuperAdmin = targetUser.role === 'SUPER_ADMIN';
+    if (targetIsSuperAdmin && !isPermanentOwner) {
+      setUserActionBanner('Only a Permanent Owner can demote or remove an appointed Super Admin.');
+      return;
+    }
+
+    if (targetUser.id === user.uid && !isPermanentOwner) {
+      setUserActionBanner('Only a Permanent Owner can modify your Super Admin clearance.');
       return;
     }
 
     try {
       const now = new Date().toISOString();
+      const becomingSuperAdmin = newRole === 'SUPER_ADMIN';
+      const leavingSuperAdmin = targetIsSuperAdmin && !becomingSuperAdmin;
       const becomingAdmin = newRole === 'ADMIN';
       const leavingAdmin =
         !becomingAdmin &&
+        !becomingSuperAdmin &&
         (targetUser.role === 'ADMIN' ||
           targetUser.isAdminMember === true ||
           targetUser.adminMembershipStatus === 'APPROVED');
 
-      // 1. Server audit check
-      await fetch('/api/admin/roles', {
+      const actionName = becomingSuperAdmin
+        ? 'PROMOTE_TO_SUPER_ADMIN'
+        : leavingSuperAdmin
+          ? 'REMOVE_SUPER_ADMIN'
+          : `SET_ROLE_TO_${newRole}`;
+
+      // 1. Server audit & hierarchy check
+      const roleResp = await fetch('/api/admin/roles', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -770,20 +788,27 @@ export const SuperAdminDashboard: React.FC = () => {
           targetUserId: targetUser.id,
           targetUserEmail: targetUser.email,
           newRole,
-          action: `SET_ROLE_TO_${newRole}`,
+          action: actionName,
         }),
       });
+
+      if (!roleResp.ok) {
+        const errPayload = await roleResp.json().catch(() => ({}));
+        throw new Error(errPayload.error || 'Server rejected role change');
+      }
 
       // 2. Update Firestore document & keep Admin Member status in sync
       const userUpdates: Record<string, unknown> = {
         role: newRole,
         updatedAt: now,
       };
-      if (becomingAdmin) {
+      if (becomingSuperAdmin) {
+        userUpdates.isSuspended = false;
+      } else if (becomingAdmin) {
         userUpdates.isAdminMember = true;
         userUpdates.adminMembershipStatus = 'APPROVED';
         userUpdates.isSuspended = false;
-      } else if (leavingAdmin) {
+      } else if (leavingAdmin || (leavingSuperAdmin && newRole !== 'ADMIN')) {
         userUpdates.isAdminMember = false;
         userUpdates.adminMembershipStatus = 'NONE';
       }
@@ -804,24 +829,88 @@ export const SuperAdminDashboard: React.FC = () => {
         }
       }
 
+      // 3. Notify user on Super Admin appointment or removal & log in Firestore auditLogs
+      if (becomingSuperAdmin || leavingSuperAdmin) {
+        try {
+          const notifId = `notif_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+          await setDoc(doc(db, 'notifications', notifId), {
+            id: notifId,
+            recipientId: targetUser.id,
+            type: 'STATUS_CHANGED',
+            title: becomingSuperAdmin
+              ? 'Super Admin Clearance Granted 👑'
+              : 'Super Admin Clearance Removed',
+            message: becomingSuperAdmin
+              ? `You were appointed as a Super Admin on Cycle.exe by ${user.displayName || user.email}. Permanent Owners retain highest authority.`
+              : `Your Super Admin privileges on Cycle.exe were removed by the Permanent Owner. Your role is now ${newRole}.`,
+            isRead: false,
+            createdAt: now,
+          });
+        } catch {
+          // Non-fatal notification write
+        }
+
+        try {
+          const logId = `log_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+          await setDoc(doc(db, 'auditLogs', logId), {
+            id: logId,
+            actorId: user.uid,
+            actorEmail: user.email || '',
+            action: actionName,
+            targetType: 'USER',
+            targetId: targetUser.id,
+            details: `${
+              becomingSuperAdmin ? 'Appointed' : 'Removed'
+            } SUPER_ADMIN for ${targetUser.displayName} (${targetUser.email}) -> ${newRole}`,
+            createdAt: now,
+          });
+        } catch {
+          // Non-fatal audit write
+        }
+      }
+
+      if (inspectingUser?.id === targetUser.id) {
+        setInspectingUser((prev) =>
+          prev
+            ? {
+                ...prev,
+                role: newRole as UserRole,
+                ...(becomingSuperAdmin ? { isSuspended: false } : {}),
+              }
+            : null
+        );
+      }
+
+      setUserActionBanner(
+        becomingSuperAdmin
+          ? `${targetUser.displayName} has been promoted to Super Admin.`
+          : leavingSuperAdmin
+            ? `Removed Super Admin clearance from ${targetUser.displayName} (now ${newRole}).`
+            : `Updated ${targetUser.displayName}'s role to ${newRole}.`
+      );
       fetchStats();
     } catch (err) {
       console.error('Role update error:', err);
-      alert(err instanceof Error ? err.message : 'Failed to update user role');
+      setUserActionBanner(err instanceof Error ? err.message : 'Failed to update user role');
     }
   };
 
   // Toggle account suspension
   const handleToggleSuspend = async (targetUser: UserProfile) => {
-    if (!user) return;
+    if (!user || !isSuperAdmin) return;
     if (isSuperAdminEmail(targetUser.email)) {
-      alert('A designated Super Admin account cannot be suspended.');
+      setUserActionBanner('A Permanent Owner account cannot be suspended.');
+      return;
+    }
+
+    if (targetUser.role === 'SUPER_ADMIN' && !isPermanentOwner) {
+      setUserActionBanner('Only a Permanent Owner can suspend or reactivate an appointed Super Admin.');
       return;
     }
 
     const nextState = !targetUser.isSuspended;
     try {
-      await fetch('/api/admin/roles', {
+      const roleResp = await fetch('/api/admin/roles', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -837,22 +926,36 @@ export const SuperAdminDashboard: React.FC = () => {
         }),
       });
 
+      if (!roleResp.ok) {
+        const errPayload = await roleResp.json().catch(() => ({}));
+        throw new Error(errPayload.error || 'Server rejected suspension change');
+      }
+
       await updateDoc(doc(db, 'users', targetUser.id), {
         isSuspended: nextState,
         updatedAt: new Date().toISOString(),
       });
 
+      setUserActionBanner(
+        nextState
+          ? `Suspended ${targetUser.displayName}'s account.`
+          : `Reactivated ${targetUser.displayName}'s account.`
+      );
       fetchStats();
     } catch (err: unknown) {
       console.error('Suspension toggle error:', err);
-      alert(err instanceof Error ? err.message : 'Failed to update suspension status');
+      setUserActionBanner(err instanceof Error ? err.message : 'Failed to update suspension status');
     }
   };
 
   // Open delete confirmation modal
   const handleOpenDeleteUser = (targetUser: UserProfile) => {
     if (isSuperAdminEmail(targetUser.email) || targetUser.id === user?.uid) {
-      setUserActionBanner('Protected Super Admin owner accounts cannot be deleted.');
+      setUserActionBanner('Permanent Owner or active self accounts cannot be deleted.');
+      return;
+    }
+    if (targetUser.role === 'SUPER_ADMIN' && !isPermanentOwner) {
+      setUserActionBanner('Only a Permanent Owner can delete an appointed Super Admin account.');
       return;
     }
     setDeleteUserError(null);
@@ -868,7 +971,11 @@ export const SuperAdminDashboard: React.FC = () => {
     const targetName = deleteTargetUser.displayName || targetEmail || targetUid;
 
     if (targetUid === user.uid || isSuperAdminEmail(targetEmail)) {
-      setDeleteUserError('Protected Super Admin owner accounts cannot be deleted.');
+      setDeleteUserError('Permanent Owner or active self accounts cannot be deleted.');
+      return;
+    }
+    if (deleteTargetUser.role === 'SUPER_ADMIN' && !isPermanentOwner) {
+      setDeleteUserError('Only a Permanent Owner can delete an appointed Super Admin account.');
       return;
     }
 
@@ -1075,10 +1182,18 @@ export const SuperAdminDashboard: React.FC = () => {
 
   // Calculate real metrics from Firestore users list
   const totalUsers = allUsers.length;
-  const publicCount = allUsers.filter((u) => u.role === 'PUBLIC' || (u.role === 'SUPER_ADMIN' && !isSuperAdminEmail(u.email))).length;
-  const memberCount = allUsers.filter((u) => u.role === 'MEMBER').length;
-  const adminCount = allUsers.filter((u) => u.role === 'ADMIN').length;
-  const superAdminCount = allUsers.filter((u) => isSuperAdminEmail(u.email)).length;
+  const superAdminCount = allUsers.filter(
+    (u) => isSuperAdminEmail(u.email) || u.role === 'SUPER_ADMIN'
+  ).length;
+  const adminCount = allUsers.filter(
+    (u) => !isSuperAdminEmail(u.email) && u.role === 'ADMIN'
+  ).length;
+  const memberCount = allUsers.filter(
+    (u) => !isSuperAdminEmail(u.email) && u.role === 'MEMBER'
+  ).length;
+  const publicCount = allUsers.filter(
+    (u) => !isSuperAdminEmail(u.email) && u.role === 'PUBLIC'
+  ).length;
 
   const filteredUsers = allUsers.filter(
     (u) =>
@@ -1098,14 +1213,19 @@ export const SuperAdminDashboard: React.FC = () => {
             <div>
               <div className="flex items-center gap-3 flex-wrap">
                 <h1 className="text-2xl sm:text-3xl font-black text-zinc-900">Super Admin Control Hub</h1>
-                <span className="role-badge SUPER_ADMIN">EXECUTIVE</span>
+                <span className="role-badge SUPER_ADMIN">
+                  {isPermanentOwner ? 'PERMANENT OWNER' : 'APPOINTED SUPER ADMIN'}
+                </span>
                 <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-100 border border-emerald-400 text-emerald-900 text-xs font-black shadow-sm">
                   <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></span>
                   <span>{stats?.activeSessionsCount || 1} Live Visitor{(stats?.activeSessionsCount || 1) === 1 ? '' : 's'} Online</span>
                 </div>
               </div>
               <p className="text-xs sm:text-sm text-zinc-700 mt-1">
-                Logged in as <strong>{user?.email}</strong>. Sole executive authority for Cycle.exe.
+                Logged in as <strong>{user?.email}</strong>.{' '}
+                {isPermanentOwner
+                  ? 'Highest authority on Cycle.exe — appoint or remove Super Admins at any time.'
+                  : 'Appointed Super Admin clearance (Permanent Owners retain highest authority).'}
               </p>
             </div>
           </div>
@@ -1186,7 +1306,7 @@ export const SuperAdminDashboard: React.FC = () => {
         </div>
       </div>
 
-      {profile && profile.role !== 'SUPER_ADMIN' && (
+      {isPermanentOwner && profile && profile.role !== 'SUPER_ADMIN' && (
         <div className="neo-card p-4 sm:p-5 bg-amber-50 border-2 border-amber-600 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div className="flex items-start gap-3">
             <div className="w-10 h-10 rounded-full bg-amber-500 text-black border-2 border-zinc-900 flex items-center justify-center shrink-0 mt-0.5">
@@ -1752,7 +1872,10 @@ export const SuperAdminDashboard: React.FC = () => {
             <div>
               <h2 className="text-xl font-bold">User &amp; Role Management</h2>
               <p className="text-xs text-zinc-600">
-                Promote public users to members or admins. Revoke privileges instantly.
+                Promote users to Member, Admin, or Super Admin.{' '}
+                {isPermanentOwner
+                  ? 'As Permanent Owner, you hold highest authority and can remove any appointed Super Admin.'
+                  : 'Permanent Owners retain exclusive authority to demote, suspend, or remove Super Admins.'}
               </p>
             </div>
 
@@ -1804,7 +1927,12 @@ export const SuperAdminDashboard: React.FC = () => {
                   </tr>
                 ) : filteredUsers.map((u) => {
                   const isOwner = isSuperAdminEmail(u.email);
-                  const displayRole = isOwner ? 'SUPER_ADMIN' : u.role === 'SUPER_ADMIN' ? 'PUBLIC' : u.role;
+                  const isTargetSuperAdmin = isOwner || u.role === 'SUPER_ADMIN';
+                  const displayRole: UserRole = isOwner ? 'SUPER_ADMIN' : u.role;
+                  const canModifyTarget =
+                    !isOwner &&
+                    u.id !== user?.uid &&
+                    (isPermanentOwner || !isTargetSuperAdmin);
 
                   return (
                     <tr
@@ -1837,9 +1965,19 @@ export const SuperAdminDashboard: React.FC = () => {
                       </td>
                       <td className="text-xs text-zinc-600">{u.email}</td>
                       <td>
-                        <div className="flex items-center gap-1">
+                        <div className="flex items-center gap-1 flex-wrap">
                           <span className={`role-badge ${displayRole}`}>{displayRole}</span>
-                          {u.isAdminMember && !isOwner && (
+                          {isOwner && (
+                            <span className="text-[10px] bg-[#1e1e1e] text-[#f9c74f] font-black px-1.5 py-0.5 rounded border border-zinc-900">
+                              Permanent Owner
+                            </span>
+                          )}
+                          {!isOwner && u.role === 'SUPER_ADMIN' && (
+                            <span className="text-[10px] bg-amber-100 text-amber-900 font-black px-1.5 py-0.5 rounded border border-amber-400">
+                              Appointed Super Admin
+                            </span>
+                          )}
+                          {u.isAdminMember && !isTargetSuperAdmin && (
                             <span className="text-[10px] bg-amber-100 text-amber-900 font-black px-1.5 py-0.5 rounded border border-amber-300">
                               Admin Member
                             </span>
@@ -1888,7 +2026,7 @@ export const SuperAdminDashboard: React.FC = () => {
                                 type="button"
                                 onClick={async () => {
                                   const res = await syncSuperAdminAccess();
-                                  alert(res.message);
+                                  setUserActionBanner(res.message);
                                 }}
                                 className="px-2 py-1 rounded-lg border border-amber-700 bg-amber-100 hover:bg-amber-200 text-amber-900 text-[11px] font-black"
                               >
@@ -1896,8 +2034,36 @@ export const SuperAdminDashboard: React.FC = () => {
                               </button>
                             )}
                           </div>
+                        ) : !canModifyTarget ? (
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <button
+                              type="button"
+                              onClick={() => setInspectingUser(u)}
+                              title="Inspect User Profile"
+                              className="px-2 py-1 rounded-lg border border-zinc-900 bg-white hover:bg-zinc-100 text-xs font-bold flex items-center gap-1"
+                            >
+                              <i className="fas fa-eye text-amber-600"></i>
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setNoticeTargetUser(u);
+                                setIsNoticeComposerOpen(true);
+                              }}
+                              title={`Send Direct Notice to ${u.displayName}`}
+                              className="px-2 py-1 rounded-lg border border-zinc-900 bg-[#f9c74f] hover:bg-amber-400 text-xs font-bold flex items-center gap-1 shadow-sm text-zinc-900"
+                            >
+                              <i className="fas fa-paper-plane text-[10px]"></i>
+                              <span className="hidden xl:inline">Notice</span>
+                            </button>
+
+                            <span className="text-[11px] font-bold text-amber-800 bg-amber-50 px-2 py-1 rounded-lg border border-amber-300">
+                              {u.id === user?.uid ? 'Your Super Admin Account' : 'Owner Authority Only'}
+                            </span>
+                          </div>
                         ) : (
-                          <div className="flex items-center gap-1.5">
+                          <div className="flex items-center gap-1.5 flex-wrap">
                             <button
                               type="button"
                               onClick={() => setInspectingUser(u)}
@@ -1928,19 +2094,33 @@ export const SuperAdminDashboard: React.FC = () => {
                               <option value="PUBLIC">PUBLIC</option>
                               <option value="MEMBER">MEMBER</option>
                               <option value="ADMIN">ADMIN</option>
+                              <option value="SUPER_ADMIN">SUPER_ADMIN</option>
                             </select>
 
-                            {(u.role === 'ADMIN' || u.isAdminMember || u.adminMembershipStatus === 'APPROVED') && (
+                            {isPermanentOwner && u.role === 'SUPER_ADMIN' && (
                               <button
                                 type="button"
-                                onClick={() => handleRemoveFromAdminPanel(u.id, u.displayName)}
-                                title={`Kick ${u.displayName} out as Admin Member`}
+                                onClick={() => handleChangeRole(u, 'PUBLIC')}
+                                title={`Remove ${u.displayName} as Super Admin`}
                                 className="px-2 py-1 rounded-lg border border-rose-700 bg-rose-50 hover:bg-rose-100 text-rose-800 text-xs font-bold flex items-center gap-1"
                               >
-                                <i className="fas fa-user-minus"></i>
-                                <span className="hidden xl:inline">Remove Admin</span>
+                                <i className="fas fa-crown"></i>
+                                <span>Remove Super Admin</span>
                               </button>
                             )}
+
+                            {(u.role === 'ADMIN' || u.isAdminMember || u.adminMembershipStatus === 'APPROVED') &&
+                              u.role !== 'SUPER_ADMIN' && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleRemoveFromAdminPanel(u.id, u.displayName)}
+                                  title={`Kick ${u.displayName} out as Admin Member`}
+                                  className="px-2 py-1 rounded-lg border border-rose-700 bg-rose-50 hover:bg-rose-100 text-rose-800 text-xs font-bold flex items-center gap-1"
+                                >
+                                  <i className="fas fa-user-minus"></i>
+                                  <span className="hidden xl:inline">Remove Admin</span>
+                                </button>
+                              )}
 
                             <button
                               type="button"
@@ -2350,7 +2530,18 @@ export const SuperAdminDashboard: React.FC = () => {
               <p className="text-xs text-zinc-500 font-mono mt-0.5">{inspectingUser.email}</p>
 
               <div className="flex items-center justify-center gap-2 mt-3 flex-wrap">
-                <span className={`role-badge ${inspectingUser.role}`}>{inspectingUser.role}</span>
+                <span className={`role-badge ${isSuperAdminEmail(inspectingUser.email) ? 'SUPER_ADMIN' : inspectingUser.role}`}>
+                  {isSuperAdminEmail(inspectingUser.email) ? 'SUPER_ADMIN' : inspectingUser.role}
+                </span>
+                {isSuperAdminEmail(inspectingUser.email) ? (
+                  <span className="text-[11px] font-black uppercase bg-[#1e1e1e] text-[#f9c74f] px-2.5 py-0.5 rounded-full border border-zinc-900">
+                    Permanent Owner
+                  </span>
+                ) : inspectingUser.role === 'SUPER_ADMIN' ? (
+                  <span className="text-[11px] font-black uppercase bg-amber-100 text-amber-900 px-2.5 py-0.5 rounded-full border border-amber-400">
+                    Appointed Super Admin
+                  </span>
+                ) : null}
                 {inspectingUser.isSuspended ? (
                   <span className="text-xs font-black uppercase bg-red-100 text-red-800 px-2.5 py-0.5 rounded-full border border-red-300">
                     <i className="fas fa-ban mr-1"></i> Suspended
@@ -2418,41 +2609,65 @@ export const SuperAdminDashboard: React.FC = () => {
                 )}
               </div>
 
-              {!isSuperAdminEmail(inspectingUser.email) && (
-                <div className="flex items-center justify-between gap-2 pt-2">
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs font-bold text-zinc-600">Change Role:</span>
-                    <select
-                      value={inspectingUser.role === 'SUPER_ADMIN' ? 'PUBLIC' : inspectingUser.role}
-                      onChange={(e) => {
-                        handleChangeRole(inspectingUser, e.target.value);
-                        setInspectingUser((prev) => prev ? { ...prev, role: e.target.value as any } : null);
-                      }}
-                      className="text-xs font-bold py-1 px-2.5 rounded-xl border border-zinc-900 bg-white"
-                    >
-                      <option value="PUBLIC">PUBLIC</option>
-                      <option value="MEMBER">MEMBER</option>
-                      <option value="ADMIN">ADMIN</option>
-                    </select>
-                  </div>
+              {!isSuperAdminEmail(inspectingUser.email) &&
+                inspectingUser.id !== user?.uid &&
+                (isPermanentOwner || inspectingUser.role !== 'SUPER_ADMIN') && (
+                  <div className="space-y-2 pt-2">
+                    <div className="flex items-center justify-between gap-2 flex-wrap">
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-bold text-zinc-600">Change Role:</span>
+                        <select
+                          value={inspectingUser.role}
+                          onChange={(e) => {
+                            handleChangeRole(inspectingUser, e.target.value);
+                          }}
+                          className="text-xs font-bold py-1 px-2.5 rounded-xl border border-zinc-900 bg-white"
+                        >
+                          <option value="PUBLIC">PUBLIC</option>
+                          <option value="MEMBER">MEMBER</option>
+                          <option value="ADMIN">ADMIN</option>
+                          <option value="SUPER_ADMIN">SUPER_ADMIN</option>
+                        </select>
+                      </div>
 
-                  <button
-                    type="button"
-                    onClick={() => {
-                      handleToggleSuspend(inspectingUser);
-                      setInspectingUser((prev) => prev ? { ...prev, isSuspended: !prev.isSuspended } : null);
-                    }}
-                    className={`py-1.5 px-3 text-xs font-bold rounded-xl border transition flex items-center gap-1.5 ${
-                      inspectingUser.isSuspended
-                        ? 'bg-emerald-100 border-emerald-700 text-emerald-800 hover:bg-emerald-200'
-                        : 'bg-red-100 border-red-700 text-red-800 hover:bg-red-200'
-                    }`}
-                  >
-                    <i className={`fas ${inspectingUser.isSuspended ? 'fa-user-check' : 'fa-user-slash'}`}></i>
-                    {inspectingUser.isSuspended ? 'Reactivate Account' : 'Suspend Account'}
-                  </button>
-                </div>
-              )}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          handleToggleSuspend(inspectingUser);
+                          setInspectingUser((prev) => prev ? { ...prev, isSuspended: !prev.isSuspended } : null);
+                        }}
+                        className={`py-1.5 px-3 text-xs font-bold rounded-xl border transition flex items-center gap-1.5 ${
+                          inspectingUser.isSuspended
+                            ? 'bg-emerald-100 border-emerald-700 text-emerald-800 hover:bg-emerald-200'
+                            : 'bg-red-100 border-red-700 text-red-800 hover:bg-red-200'
+                        }`}
+                      >
+                        <i className={`fas ${inspectingUser.isSuspended ? 'fa-user-check' : 'fa-user-slash'}`}></i>
+                        {inspectingUser.isSuspended ? 'Reactivate Account' : 'Suspend Account'}
+                      </button>
+                    </div>
+
+                    {isPermanentOwner && inspectingUser.role === 'SUPER_ADMIN' && (
+                      <button
+                        type="button"
+                        onClick={() => handleChangeRole(inspectingUser, 'PUBLIC')}
+                        className="w-full py-2 px-3 text-xs font-black rounded-xl border-2 border-rose-700 bg-rose-50 hover:bg-rose-100 text-rose-900 flex items-center justify-center gap-2"
+                      >
+                        <i className="fas fa-crown"></i>
+                        <span>Remove as Super Admin (Demote to PUBLIC)</span>
+                      </button>
+                    )}
+                  </div>
+                )}
+
+              {!isSuperAdminEmail(inspectingUser.email) &&
+                inspectingUser.role === 'SUPER_ADMIN' &&
+                !isPermanentOwner && (
+                  <div className="p-2.5 bg-amber-50 border border-amber-300 rounded-xl text-xs font-bold text-amber-900 flex items-center gap-2">
+                    <i className="fas fa-lock text-amber-700"></i>
+                    <span>Only a Permanent Owner can demote, suspend, or delete a Super Admin account.</span>
+                  </div>
+                )}
 
               <div className="pt-2 flex flex-col sm:flex-row gap-2">
                 <button
@@ -2469,16 +2684,18 @@ export const SuperAdminDashboard: React.FC = () => {
                   <span>Send Direct Notice to {inspectingUser.displayName}</span>
                 </button>
 
-                {!isSuperAdminEmail(inspectingUser.email) && inspectingUser.id !== user?.uid && (
-                  <button
-                    type="button"
-                    onClick={() => handleOpenDeleteUser(inspectingUser)}
-                    className="py-2 px-4 text-xs font-black flex items-center justify-center gap-2 bg-red-600 text-white border-2 border-[#1e1e1e] rounded-xl shadow-[0_3px_0_#1e1e1e] hover:bg-red-700 transition cursor-pointer"
-                  >
-                    <i className="fas fa-trash-alt"></i>
-                    <span>Delete Account</span>
-                  </button>
-                )}
+                {!isSuperAdminEmail(inspectingUser.email) &&
+                  inspectingUser.id !== user?.uid &&
+                  (isPermanentOwner || inspectingUser.role !== 'SUPER_ADMIN') && (
+                    <button
+                      type="button"
+                      onClick={() => handleOpenDeleteUser(inspectingUser)}
+                      className="py-2 px-4 text-xs font-black flex items-center justify-center gap-2 bg-red-600 text-white border-2 border-[#1e1e1e] rounded-xl shadow-[0_3px_0_#1e1e1e] hover:bg-red-700 transition cursor-pointer"
+                    >
+                      <i className="fas fa-trash-alt"></i>
+                      <span>Delete Account</span>
+                    </button>
+                  )}
               </div>
             </div>
           </div>
