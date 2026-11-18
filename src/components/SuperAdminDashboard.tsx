@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   collection,
   onSnapshot,
@@ -53,6 +53,12 @@ export const SuperAdminDashboard: React.FC = () => {
   const [inspectActionBusy, setInspectActionBusy] = useState<string | null>(null);
   const [roleRulesBlocked, setRoleRulesBlocked] = useState(false);
   const [copiedRules, setCopiedRules] = useState(false);
+  const recentSuperAdminPromotionRef = useRef<{
+    userId: string;
+    displayName: string;
+    at: number;
+    confirmed: boolean;
+  } | null>(null);
 
   // Super Admin Account Deletion Modal State
   const [deleteTargetUser, setDeleteTargetUser] = useState<UserProfile | null>(null);
@@ -193,8 +199,28 @@ export const SuperAdminDashboard: React.FC = () => {
     };
   }, [isSuperAdmin]);
 
-  // Keep inspectingUser synchronized with live Firestore updates
+  // Keep inspectingUser synchronized with live Firestore updates & detect external/stale-tab Super Admin reversion
   useEffect(() => {
+    const recent = recentSuperAdminPromotionRef.current;
+    if (recent) {
+      if (Date.now() - recent.at > 15000) {
+        recentSuperAdminPromotionRef.current = null;
+      } else {
+        const liveTarget = allUsers.find((u) => u.id === recent.userId);
+        if (liveTarget) {
+          if (liveTarget.role === 'SUPER_ADMIN') {
+            recent.confirmed = true;
+          } else if (recent.confirmed || Date.now() - recent.at > 400) {
+            recentSuperAdminPromotionRef.current = null;
+            const warnMsg = `${liveTarget.displayName} was promoted to SUPER_ADMIN, but another open Cycle.exe tab or older deployment (Shared URL / GitHub Pages) immediately reset them back to ${liveTarget.role}. Close older tabs, stay on this updated URL, and publish the updated firestore.rules to block older tabs from reverting Super Admins.`;
+            setUserActionBanner({ type: 'error', text: warnMsg });
+            setInspectActionFeedback({ type: 'error', text: warnMsg });
+            setRoleRulesBlocked(true);
+          }
+        }
+      }
+    }
+
     if (!inspectingUser) return;
     const updated = allUsers.find((u) => u.id === inspectingUser.id);
     if (updated) {
@@ -320,6 +346,9 @@ export const SuperAdminDashboard: React.FC = () => {
     if (!confirm(`Are you sure you want to suspend Admin Member privileges for ${name}?`)) return;
 
     try {
+      if (recentSuperAdminPromotionRef.current?.userId === targetUserId) {
+        recentSuperAdminPromotionRef.current = null;
+      }
       const now = new Date().toISOString();
       await updateDoc(doc(db, 'users', targetUserId), {
         isAdminMember: false,
@@ -398,6 +427,9 @@ export const SuperAdminDashboard: React.FC = () => {
     if (!user || !isSuperAdmin) return;
 
     try {
+      if (recentSuperAdminPromotionRef.current?.userId === targetUserId) {
+        recentSuperAdminPromotionRef.current = null;
+      }
       setInspectActionBusy('adminRemove');
       setInspectActionFeedback(null);
       const now = new Date().toISOString();
@@ -899,8 +931,13 @@ export const SuperAdminDashboard: React.FC = () => {
       }
 
       // 2. Update Firestore document & keep Admin Member status in sync
+      if (!becomingSuperAdmin && recentSuperAdminPromotionRef.current?.userId === targetUser.id) {
+        recentSuperAdminPromotionRef.current = null;
+      }
+
       const userUpdates: Record<string, unknown> = {
         role: newRole,
+        roleUpdatedAt: now,
         updatedAt: now,
       };
       if (becomingSuperAdmin) {
@@ -915,6 +952,15 @@ export const SuperAdminDashboard: React.FC = () => {
       }
 
       await updateDoc(doc(db, 'users', targetUser.id), userUpdates);
+
+      if (becomingSuperAdmin) {
+        recentSuperAdminPromotionRef.current = {
+          userId: targetUser.id,
+          displayName: targetUser.displayName,
+          at: Date.now(),
+          confirmed: false,
+        };
+      }
 
       if (becomingAdmin || leavingAdmin) {
         try {

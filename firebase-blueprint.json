@@ -19,7 +19,8 @@
         "ratingAverage": { "type": "number" },
         "ratingCount": { "type": "number" },
         "createdAt": { "type": "string", "format": "date-time" },
-        "updatedAt": { "type": "string", "format": "date-time" }
+        "updatedAt": { "type": "string", "format": "date-time" },
+        "roleUpdatedAt": { "type": "string", "format": "date-time" }
       },
       "required": ["id", "displayName", "role", "isSuspended", "createdAt"]
     },

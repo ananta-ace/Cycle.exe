@@ -100,6 +100,12 @@ service cloud.firestore {
           isPermanentOwner() && (
             !isPermanentOwnerDoc(resource.data) ||
             (isOwner(userId) && request.resource.data.role == 'SUPER_ADMIN' && request.resource.data.isSuspended == false)
+          ) &&
+          // Prevent older/stale tabs from silently reverting an appointed SUPER_ADMIN back to PUBLIC
+          (
+            resource.data.role != 'SUPER_ADMIN' ||
+            request.resource.data.role == 'SUPER_ADMIN' ||
+            request.resource.data.diff(resource.data).affectedKeys().hasAny(['roleUpdatedAt'])
           )
         ) ||
         (
