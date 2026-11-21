@@ -1,12 +1,14 @@
 import React from 'react';
 import { TabType } from '../types';
 import { useAuth } from '../context/AuthContext';
+import { DesktopAppButton } from './DesktopAppModal';
 
 interface NavbarProps {
   activeTab: TabType;
   onSelectTab: (tab: TabType) => void;
   onOpenAuth: () => void;
   onOpenNotifications: () => void;
+  onOpenDesktopModal: () => void;
   theme: 'light' | 'dark';
   onToggleTheme: () => void;
 }
@@ -16,6 +18,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   onSelectTab,
   onOpenAuth,
   onOpenNotifications,
+  onOpenDesktopModal,
   theme,
   onToggleTheme,
 }) => {
@@ -101,6 +104,9 @@ export const Navbar: React.FC<NavbarProps> = ({
 
       {/* Right-hand utilities & Auth */}
       <div className="flex items-center gap-2 sm:gap-3">
+        {/* Desktop Software / PWA Install Button */}
+        <DesktopAppButton onOpenModal={onOpenDesktopModal} />
+
         {/* Dark / Light Theme Switcher */}
         <button
           type="button"

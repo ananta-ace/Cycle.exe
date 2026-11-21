@@ -17,6 +17,7 @@ import { ApplicationModal } from './components/ApplicationModal';
 import { NotificationsDrawer } from './components/NotificationsDrawer';
 import { WelcomeMembershipModal } from './components/WelcomeMembershipModal';
 import { RatingModal } from './components/RatingModal';
+import { DesktopAppModal, OfflineIndicator } from './components/DesktopAppModal';
 
 const MainContent: React.FC = () => {
   const { isSuperAdmin, isAdmin, accountNotice, clearAccountNotice } = useAuth();
@@ -41,6 +42,7 @@ const MainContent: React.FC = () => {
   const [authModalOpen, setAuthModalOpen] = useState(false);
   const [applyModalOpen, setApplyModalOpen] = useState(false);
   const [notificationsDrawerOpen, setNotificationsDrawerOpen] = useState(false);
+  const [desktopModalOpen, setDesktopModalOpen] = useState(false);
 
   // Light / Dark Theme State
   const [theme, setTheme] = useState<'light' | 'dark'>(() => {
@@ -128,6 +130,7 @@ const MainContent: React.FC = () => {
         onSelectTab={handleTabChange}
         onOpenAuth={() => setAuthModalOpen(true)}
         onOpenNotifications={() => setNotificationsDrawerOpen(true)}
+        onOpenDesktopModal={() => setDesktopModalOpen(true)}
         theme={theme}
         onToggleTheme={handleToggleTheme}
       />
@@ -200,7 +203,13 @@ const MainContent: React.FC = () => {
         onNavigateTab={handleTabChange}
       />
 
+      <DesktopAppModal
+        isOpen={desktopModalOpen}
+        onClose={() => setDesktopModalOpen(false)}
+      />
+
       <WelcomeMembershipModal />
+      <OfflineIndicator />
     </div>
   );
 };

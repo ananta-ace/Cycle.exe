@@ -1,0 +1,57 @@
+{
+  "name": "cycle-exe-desktop",
+  "version": "1.0.0",
+  "description": "Cycle.exe Desktop Software — Cycling group log, crew directory, missions, community feed, and photo gallery.",
+  "main": "main.cjs",
+  "author": "Cycle.exe",
+  "license": "MIT",
+  "scripts": {
+    "start": "electron .",
+    "build:exe": "electron-builder --win portable nsis --x64",
+    "build:portable": "electron-builder --win portable --x64"
+  },
+  "devDependencies": {
+    "electron": "^33.2.1",
+    "electron-builder": "^25.1.8"
+  },
+  "build": {
+    "appId": "com.cycleexe.desktop",
+    "productName": "Cycle.exe",
+    "asar": true,
+    "directories": {
+      "output": "dist",
+      "buildResources": "assets"
+    },
+    "files": [
+      "main.cjs",
+      "preload.cjs",
+      "assets/**/*",
+      "web-dist/**/*"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "portable",
+          "arch": ["x64"]
+        },
+        {
+          "target": "nsis",
+          "arch": ["x64"]
+        }
+      ],
+      "icon": "assets/icon.ico"
+    },
+    "portable": {
+      "artifactName": "cycle.exe"
+    },
+    "nsis": {
+      "artifactName": "Cycle.exe-Setup-${version}.exe",
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Cycle.exe"
+    }
+  }
+}

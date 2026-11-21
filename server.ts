@@ -115,6 +115,26 @@ if (!fs.existsSync(uploadsDir)) {
 }
 app.use('/uploads', express.static(uploadsDir));
 
+// Serve downloadable desktop executables directly with attachment headers
+const downloadsDir = path.resolve(process.cwd(), 'public', 'downloads');
+if (!fs.existsSync(downloadsDir)) {
+  fs.mkdirSync(downloadsDir, { recursive: true });
+}
+app.use(
+  '/downloads',
+  express.static(downloadsDir, {
+    setHeaders: (res, filePath) => {
+      if (filePath.toLowerCase().endsWith('.exe')) {
+        res.setHeader('Content-Type', 'application/vnd.microsoft.portable-executable');
+        res.setHeader(
+          'Content-Disposition',
+          `attachment; filename="${path.basename(filePath)}"`
+        );
+      }
+    },
+  })
+);
+
 // -------------------------------------------------------------
 // In-Memory Fallback & Real-time State (Synced with Firestore)
 // -------------------------------------------------------------
